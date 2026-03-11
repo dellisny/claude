@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+{% block title %}SHaDE{% endblock %}
+
+{% block extra_styles %}
+<style>
+  :root {
+    --s-color: #6C63FF;
+    --d-color: #FF6584;
+    --radius: 12px;
+  }
+
+  .shade-wrap {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 28px 0 64px;
+  }
+
+  .shade-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .shade-logo {
+    font-size: 2.8rem;
+    font-weight: 900;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, var(--s-color), var(--d-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .shade-tagline {
+    color: var(--dim);
+    font-size: 0.75rem;
+    margin-top: 4px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* NEXT UP */
+  .next-up {
+    background: var(--bg2);
+    border-radius: var(--radius);
+    padding: 22px;
+    text-align: center;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .next-up::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.05;
+    background: var(--next-color, var(--s-color));
+    pointer-events: none;
+  }
+
+  .next-label {
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 8px;
+  }
+
+  .next-name {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: var(--next-color, var(--text));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .next-sub {
+    font-size: 0.78rem;
+    color: var(--dim);
+    margin-top: 6px;
+  }
+
+  .next-up.balanced .next-name {
+    font-size: 1.4rem;
+  }
+
+  /* AVATARS */
+  .avatars {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .avatar-card {
+    flex: 1;
+    background: var(--bg2);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+
+  .avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    font-weight: 900;
+    margin: 0 auto 8px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .card-s .avatar { background: rgba(108,99,255,0.15); color: var(--s-color); }
+  .card-d .avatar { background: rgba(255,101,132,0.15); color: var(--d-color); }
+
+  .avatar-name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .avatar-count {
+    font-size: 0.72rem;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+
+  /* ADD FORM */
+  .add-section {
+    background: var(--bg2);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 12px;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .shade-input {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+
+  .shade-input:focus { border-color: var(--yellow); }
+  input[type="date"].shade-input { flex: 0 0 140px; }
+
+  .payer-btns {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .payer-btn {
+    flex: 1;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    background: var(--bg3);
+    color: var(--dim);
+    border: 1px solid var(--border);
+    font-family: inherit;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .payer-btn.s-btn.active { background: rgba(108,99,255,0.15); color: var(--s-color); border-color: var(--s-color); }
+  .payer-btn.d-btn.active { background: rgba(255,101,132,0.15); color: var(--d-color); border-color: var(--d-color); }
+  .payer-btn:hover:not(.active) { border-color: var(--dim); color: var(--text); }
+
+  .shade-add-btn {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    background: linear-gradient(135deg, var(--s-color), var(--d-color));
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: opacity 0.15s;
+  }
+
+  .shade-add-btn:hover { opacity: 0.9; }
+  .shade-add-btn:disabled { opacity: 0.3; cursor: default; }
+
+  /* HISTORY */
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .shade-clear-btn {
+    font-size: 0.7rem;
+    color: var(--dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.05em;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  .shade-clear-btn:hover { color: var(--d-color); }
+
+  .empty-state {
+    text-align: center;
+    color: var(--dim);
+    padding: 36px 0;
+    font-size: 0.82rem;
+  }
+
+  .outing-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .outing-item {
+    background: var(--bg2);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-left: 3px solid var(--item-color);
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .outing-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--item-color) 15%, transparent);
+    color: var(--item-color);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .outing-info { flex: 1; min-width: 0; }
+
+  .outing-note {
+    font-weight: 600;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .outing-meta {
+    font-size: 0.7rem;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+
+  .outing-payer {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--item-color);
+    white-space: nowrap;
+    letter-spacing: 0.05em;
+  }
+
+  .outing-delete {
+    background: none;
+    border: none;
+    color: var(--dim);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s;
+    font-family: inherit;
+  }
+
+  .outing-delete:hover { color: var(--d-color); }
+
+  /* TOAST */
+  .shade-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 40px;
+    padding: 8px 20px;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 100;
+    color: var(--text);
+  }
+
+  .shade-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="shade-wrap">
+
+  <div class="shade-header">
+    <div class="shade-logo">SHaDE</div>
+    <div class="shade-tagline">Stephen &amp; Doug &mdash; who's buying?</div>
+  </div>
+
+  <div class="next-up" id="nextUp">
+    <div class="next-label">Next round is on</div>
+    <div class="next-name" id="nextName">—</div>
+    <div class="next-sub" id="nextSub">No outings recorded yet</div>
+  </div>
+
+  <div class="avatars">
+    <div class="avatar-card card-s">
+      <div class="avatar">S</div>
+      <div class="avatar-name">Stephen</div>
+      <div class="avatar-count" id="sCount">0 times</div>
+    </div>
+    <div class="avatar-card card-d">
+      <div class="avatar">D</div>
+      <div class="avatar-name">Doug</div>
+      <div class="avatar-count" id="dCount">0 times</div>
+    </div>
+  </div>
+
+  <div class="add-section">
+    <div class="section-label">Log an outing</div>
+    <div class="form-row">
+      <input type="date" id="dateInput" class="shade-input" />
+      <input type="text" id="noteInput" class="shade-input" placeholder="Venue or note…" />
+    </div>
+    <div class="payer-btns">
+      <button class="payer-btn s-btn" id="btnS" onclick="selectPayer('S')">Stephen paid</button>
+      <button class="payer-btn d-btn" id="btnD" onclick="selectPayer('D')">Doug paid</button>
+    </div>
+    <button class="shade-add-btn" id="addBtn" onclick="addOuting()" disabled>Add outing</button>
+  </div>
+
+  <div>
+    <div class="history-header">
+      <div class="section-label" style="margin:0">History</div>
+      <button class="shade-clear-btn" onclick="clearAll()">clear all</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+</div>
+
+<div class="shade-toast" id="toast"></div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const S_COLOR = '#6C63FF';
+  const D_COLOR = '#FF6584';
+
+  let outings = [];
+  let selectedPayer = null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('dateInput').value = today;
+
+  async function load() {
+    const res = await fetch('/shade/outings');
+    outings = await res.json();
+    render();
+  }
+
+  function selectPayer(p) {
+    selectedPayer = p;
+    document.getElementById('btnS').classList.toggle('active', p === 'S');
+    document.getElementById('btnD').classList.toggle('active', p === 'D');
+    checkForm();
+  }
+
+  function checkForm() {
+    const hasDate = !!document.getElementById('dateInput').value;
+    document.getElementById('addBtn').disabled = !(hasDate && selectedPayer);
+  }
+
+  document.getElementById('dateInput').addEventListener('change', checkForm);
+
+  async function addOuting() {
+    const date = document.getElementById('dateInput').value;
+    const note = document.getElementById('noteInput').value.trim() || 'Unnamed outing';
+    if (!date || !selectedPayer) return;
+
+    const outing = { id: Date.now(), date, note, payer: selectedPayer };
+    await fetch('/shade/outings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(outing),
+    });
+    outings.unshift(outing);
+    render();
+
+    document.getElementById('noteInput').value = '';
+    document.getElementById('dateInput').value = today;
+    selectedPayer = null;
+    document.getElementById('btnS').classList.remove('active');
+    document.getElementById('btnD').classList.remove('active');
+    document.getElementById('addBtn').disabled = true;
+    showToast('Outing logged ✓');
+  }
+
+  async function deleteOuting(id) {
+    await fetch(`/shade/outings/${id}`, { method: 'DELETE' });
+    outings = outings.filter(o => o.id !== id);
+    render();
+  }
+
+  async function clearAll() {
+    if (!outings.length) return;
+    if (!confirm('Clear all outings? This cannot be undone.')) return;
+    await fetch('/shade/outings', { method: 'DELETE' });
+    outings = [];
+    render();
+    showToast('All cleared');
+  }
+
+  function formatDate(d) {
+    const [y, m, day] = d.split('-');
+    return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function render() {
+    const sTotal = outings.filter(o => o.payer === 'S').length;
+    const dTotal = outings.filter(o => o.payer === 'D').length;
+
+    document.getElementById('sCount').textContent = sTotal === 1 ? '1 time' : `${sTotal} times`;
+    document.getElementById('dCount').textContent = dTotal === 1 ? '1 time' : `${dTotal} times`;
+
+    const nextEl  = document.getElementById('nextUp');
+    const nextName = document.getElementById('nextName');
+    const nextSub  = document.getElementById('nextSub');
+
+    if (!outings.length) {
+      nextEl.style.setProperty('--next-color', S_COLOR);
+      nextName.textContent = '—';
+      nextSub.textContent = 'No outings recorded yet';
+      nextEl.classList.remove('balanced');
+    } else if (sTotal === dTotal) {
+      nextEl.classList.add('balanced');
+      nextEl.style.setProperty('--next-color', S_COLOR);
+      nextName.textContent = "You're even!";
+      nextSub.textContent = `${sTotal} rounds each — flip a coin 🪙`;
+    } else {
+      nextEl.classList.remove('balanced');
+      const last = outings[0];
+      const nextPayer = last.payer === 'S' ? 'Doug' : 'Stephen';
+      const nextColor = last.payer === 'S' ? D_COLOR : S_COLOR;
+      nextEl.style.setProperty('--next-color', nextColor);
+      nextName.textContent = nextPayer;
+      const lastName = last.payer === 'S' ? 'Stephen' : 'Doug';
+      nextSub.textContent = `${lastName} got the last one (${formatDate(last.date)})`;
+    }
+
+    const listEl = document.getElementById('historyList');
+    if (!outings.length) {
+      listEl.innerHTML = '<div class="empty-state">Nothing logged yet.<br>Add your first outing above.</div>';
+      return;
+    }
+
+    const ul = document.createElement('div');
+    ul.className = 'outing-list';
+    outings.forEach(o => {
+      const color = o.payer === 'S' ? S_COLOR : D_COLOR;
+      const payerName = o.payer === 'S' ? 'Stephen' : 'Doug';
+      const item = document.createElement('div');
+      item.className = 'outing-item';
+      item.style.setProperty('--item-color', color);
+      item.innerHTML = `
+        <div class="outing-avatar">${esc(o.payer)}</div>
+        <div class="outing-info">
+          <div class="outing-note">${esc(o.note)}</div>
+          <div class="outing-meta">${formatDate(o.date)}</div>
+        </div>
+        <div class="outing-payer">${payerName} paid</div>
+        <button class="outing-delete" onclick="deleteOuting(${o.id})" title="Remove">✕</button>
+      `;
+      ul.appendChild(item);
+    });
+    listEl.innerHTML = '';
+    listEl.appendChild(ul);
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  load();
+</script>
+{% endblock %}

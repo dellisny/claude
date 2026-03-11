@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% set active = "btree" %}
+{% block title %}BTree{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .btree-add {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .btree-add input[type=text] {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 5px 10px;
+    width: 120px;
+    outline: none;
+  }
+  .btree-add input[type=text]:focus { border-color: var(--yellow); }
+  .btree-add button {
+    background: transparent;
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 14px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .btree-add button:hover { background: rgba(255,214,0,0.08); }
+
+  .btree-error { color: var(--red); font-size: 12px; margin-bottom: 0.5rem; }
+  .btree-empty { color: var(--dim); font-size: 12px; margin-top: 1rem; }
+
+  .btree-vals {
+    color: var(--dim);
+    font-size: 11px;
+    margin-bottom: 1rem;
+    letter-spacing: 0.04em;
+  }
+  .btree-vals span { color: var(--text); }
+
+  .tree-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 1rem;
+    display: inline-block;
+    min-width: 200px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">BINARY SEARCH TREE</div>
+
+{% if error %}
+  <div class="btree-error">{{ error }}</div>
+{% endif %}
+
+<div style="display:flex; gap:1rem; align-items:center; margin-bottom:1rem;">
+  <form class="btree-add" style="margin:0" method="post" action="/btree">
+    <input type="text" name="value" placeholder="integer…" autocomplete="off" autofocus>
+    <button type="submit">Insert</button>
+  </form>
+  {% if vals %}
+  <form method="post" action="/btree/reset"
+        onsubmit="return confirm('Reset tree to empty?')">
+    <button type="submit" style="border-color:#ff5252;color:#ff5252;background:transparent;font-family:inherit;font-size:11px;padding:5px 14px;cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;border-width:1px;border-style:solid;">Reset</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if vals %}
+  <div class="btree-vals">
+    {{ vals | length }} value{{ 's' if vals | length != 1 else '' }}:
+    <span>{{ vals | join(', ') }}</span>
+  </div>
+  <div class="tree-scroll">
+    {{ svg | safe }}
+  </div>
+{% else %}
+  <div class="btree-empty">Tree is empty. Insert an integer above.</div>
+{% endif %}
+{% endblock %}

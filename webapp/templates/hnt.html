@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set active = "hnt" %}
+{% block title %}HNT{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .hnt-card {
+    display: inline-block;
+    margin-top: 1.5rem;
+    padding: 2rem 3rem;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .hnt-price {
+    font-size: 3rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.05em;
+  }
+  .hnt-label {
+    color: var(--yellow);
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .hnt-change {
+    font-size: 1.1rem;
+    margin-top: 0.4rem;
+  }
+  .up   { color: #69f0ae; }
+  .down { color: #ff5252; }
+  .hnt-vol {
+    color: var(--dim);
+    font-size: 11px;
+    margin-top: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+  .hnt-error { color: var(--red); margin-top: 1rem; }
+  .refresh-btn {
+    display: inline-block;
+    margin-top: 1.5rem;
+    border: 1px solid var(--dim);
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 14px;
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .refresh-btn:hover { color: var(--text); border-color: var(--text); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">HNT &nbsp; HELIUM</div>
+
+{% if data.error %}
+  <div class="hnt-error">Error: {{ data.error }}</div>
+{% else %}
+  <div class="hnt-card">
+    <div class="hnt-label">HNT / USD</div>
+    <div class="hnt-price">${{ "%.4f"|format(data.price) }}</div>
+
+    {% if data.change_24h is not none %}
+      {% set change = data.change_24h %}
+      <div class="hnt-change {% if change >= 0 %}up{% else %}down{% endif %}">
+        {% if change >= 0 %}▲{% else %}▼{% endif %}
+        {{ "%.2f"|format(change | abs) }}%&nbsp; 24h
+      </div>
+    {% endif %}
+
+    {% if data.vol_24h is not none %}
+      <div class="hnt-vol">24h vol &nbsp; ${{ "{:,.0f}".format(data.vol_24h) }}</div>
+    {% endif %}
+  </div>
+{% endif %}
+
+<br>
+<a href="/hnt" class="refresh-btn">Refresh</a>
+{% endblock %}

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% set active = "bets" %}
+
+{% block title %}Bets{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .bets-section { margin-bottom: 2rem; }
+  .bets-rule {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+  .bets-rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.3;
+  }
+
+  .bets-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .bets-table th {
+    text-align: left;
+    padding: 4px 8px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+  }
+  .bets-table th.num { width: 2.2rem; text-align: right; }
+  .bets-table th.prob { width: 5rem; text-align: right; }
+  .bets-table th.vol  { width: 12rem; text-align: right; }
+
+  .bets-table td {
+    padding: 5px 8px;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border);
+  }
+  .bets-table tr:last-child td { border-bottom: none; }
+  .bets-table tr:hover td { background: var(--bg2); }
+
+  .bets-table td.num {
+    text-align: right;
+    color: var(--dim);
+    font-size: 11px;
+    width: 2.2rem;
+  }
+  .bets-table td.question {
+    width: 99%;
+  }
+  .bets-table td.question a {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .bets-table td.question a:hover { color: #000; text-decoration: underline; }
+  .bets-table td.prob {
+    text-align: right;
+    width: 5rem;
+    font-weight: 700;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .bets-table td.vol {
+    text-align: right;
+    color: var(--dim);
+    font-size: 11px;
+    width: 12rem;
+    white-space: nowrap;
+  }
+
+  /* Probability color coding */
+  .p-high   { color: #69f0ae; }
+  .p-mid    { color: #ffd600; }
+  .p-low    { color: #ff5252; }
+  .p-na     { color: var(--dim); }
+
+  .no-results { color: var(--dim); font-size: 12px; padding: 0.5rem 0; }
+</style>
+{% endblock %}
+
+{% block toolbar %}
+<div class="toolbar">
+  <form method="get" action="/bets">
+    <label>FILTER:</label>
+    <input type="text" name="q" value="{{ query }}" placeholder="keyword…" autocomplete="off">
+    <label>N:</label>
+    <input type="number" name="n" value="{{ limit }}" min="1" max="50">
+    <button type="submit">GO</button>
+    {% if query %}<a href="/bets?n={{ limit }}" class="clear-btn">CLEAR</a>{% endif %}
+  </form>
+</div>
+{% endblock %}
+
+{% block content %}
+{% for src in sources %}
+<div class="bets-section">
+  <div class="bets-rule" style="color: {{ src.color }}">{{ src.name }}</div>
+
+  {% if src.results %}
+  <table class="bets-table">
+    <thead>
+      <tr>
+        <th class="num">#</th>
+        <th>Market / Question</th>
+        <th class="prob">Yes %</th>
+        <th class="vol">Activity</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in src.results %}
+      <tr>
+        <td class="num">{{ loop.index }}</td>
+        <td class="question">
+          {% if r.url %}
+            <a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>
+          {% else %}
+            {{ r.title }}
+          {% endif %}
+        </td>
+        <td class="prob {% if r.prob == '—' %}p-na{% elif r.prob|replace('%','') | int > 60 %}p-high{% elif r.prob|replace('%','') | int > 35 %}p-mid{% else %}p-low{% endif %}">
+          {{ r.prob }}
+        </td>
+        <td class="vol">{{ r.volume }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="no-results">no results</div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block footer %}
+{% if query %}Filtered by &ldquo;{{ query }}&rdquo; &nbsp;·&nbsp; {% endif %}{{ limit }} results per source
+{% endblock %}

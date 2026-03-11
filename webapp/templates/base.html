@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Dashboard{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #f4f5f7;
+      --bg2:      #ffffff;
+      --bg3:      #eaecf0;
+      --border:   #d1d5db;
+      --dim:      #6b7280;
+      --text:     #111827;
+      --yellow:   #d97706;
+      --cyan:     #0284c7;
+      --green:    #16a34a;
+      --red:      #dc2626;
+      --magenta:  #9333ea;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "JetBrains Mono", "Fira Mono", "Consolas", "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* Nav */
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--yellow);
+      padding: 0 1rem;
+      height: 38px;
+    }
+    nav .brand {
+      color: var(--yellow);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      font-size: 13px;
+      margin-right: 2rem;
+    }
+    nav a {
+      color: #aaa;
+      text-decoration: none;
+      padding: 0 1rem;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+      text-transform: uppercase;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s;
+    }
+    nav a:hover { color: var(--text); }
+    nav a.active { color: var(--yellow); border-bottom-color: var(--yellow); }
+
+    /* Search bar */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+    }
+    .toolbar form { display: flex; gap: 0.4rem; align-items: center; flex: 1; max-width: 520px; }
+    .toolbar input[type=text] {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 4px 8px;
+      outline: none;
+      flex: 1;
+    }
+    .toolbar input[type=text]:focus { border-color: var(--yellow); }
+    .toolbar input[type=number] {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 4px 6px;
+      width: 58px;
+      outline: none;
+    }
+    .toolbar input[type=number]:focus { border-color: var(--yellow); }
+    .toolbar button {
+      background: transparent;
+      border: 1px solid var(--yellow);
+      color: var(--yellow);
+      font-family: inherit;
+      font-size: 11px;
+      padding: 4px 12px;
+      cursor: pointer;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .toolbar button:hover { background: rgba(255,214,0,0.08); }
+    .toolbar .clear-btn {
+      border-color: var(--dim);
+      color: var(--dim);
+      text-decoration: none;
+      font-size: 11px;
+      padding: 4px 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid var(--dim);
+      display: inline-block;
+    }
+    .toolbar .clear-btn:hover { color: var(--text); border-color: var(--text); }
+    .toolbar label { color: var(--dim); font-size: 11px; letter-spacing: 0.05em; }
+
+    /* Main content */
+    main { padding: 1rem 1.2rem; }
+
+    /* Rule */
+    .rule {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--yellow);
+      margin: 0.5rem 0 0.8rem;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+    }
+    .rule::before, .rule::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--yellow);
+    }
+
+    /* Footer */
+    footer {
+      padding: 0.5rem 1.2rem;
+      color: var(--dim);
+      font-size: 11px;
+      border-top: 1px solid var(--border);
+      margin-top: 1rem;
+    }
+  </style>
+  {% block extra_styles %}{% endblock %}
+</head>
+<body>
+
+<nav>
+  <span class="brand">&#9646; DASHBOARD</span>
+  <a href="/headlines" class="{% if active == 'headlines' %}active{% endif %}">Headlines</a>
+  <a href="/bets"      class="{% if active == 'bets'      %}active{% endif %}">Bets</a>
+  <a href="/stock"     class="{% if active == 'stock'     %}active{% endif %}">Stock</a>
+  <a href="/hnt"       class="{% if active == 'hnt'       %}active{% endif %}">HNT</a>
+  <a href="/btree"     class="{% if active == 'btree'     %}active{% endif %}">BTree</a>
+  <a href="/robotwar" class="{% if active == 'robotwar'  %}active{% endif %}">RobotWar</a>
+  <a href="/shade"    class="{% if active == 'shade'     %}active{% endif %}">SHaDE</a>
+</nav>
+
+{% block toolbar %}{% endblock %}
+
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<footer>
+  {% block footer %}{% endblock %}
+</footer>
+
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

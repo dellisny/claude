@@ -1,0 +1,4 @@
+yfinance>=0.2.40
+rich>=13.7.0
+plotext>=5.2.8
+click>=8.1.7

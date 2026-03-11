@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% set active = "stock" %}
+{% block title %}Stock{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .stock-header {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .stock-symbol { color: #69f0ae; font-size: 1.4rem; font-weight: 700; }
+  .stock-name   { color: var(--text); font-size: 1rem; margin-left: 0.6rem; }
+  .stock-sub    { color: var(--dim); font-size: 11px; margin-top: 0.3rem; letter-spacing: 0.05em; }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 1rem;
+  }
+  .metric-cell {
+    background: var(--bg2);
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .metric-label { color: var(--dim); font-size: 11px; letter-spacing: 0.05em; white-space: nowrap; }
+  .metric-value { color: var(--text); font-size: 13px; font-weight: 600; text-align: right; }
+
+  .chart-wrap {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .chart-title { color: var(--dim); font-size: 11px; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
+
+  .period-bar { display: flex; gap: 0.25rem; margin-bottom: 0.5rem; }
+  .period-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 10px;
+    text-decoration: none;
+    letter-spacing: 0.05em;
+  }
+  .period-btn:hover { color: var(--text); border-color: var(--text); }
+  .period-btn.active { color: var(--yellow); border-color: var(--yellow); }
+
+  .alternatives { color: var(--dim); font-size: 11px; margin-top: 0.5rem; }
+  .alternatives span { color: var(--text); }
+  .stock-error { color: var(--red); margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block toolbar %}
+<div class="toolbar">
+  <form method="get" action="/stock">
+    <label>TICKER / NAME:</label>
+    <input type="text" name="q" value="{{ query }}" placeholder="AAPL, Apple, Tesla…" autocomplete="off" style="width:200px">
+    <input type="hidden" name="period" value="{{ period }}">
+    <button type="submit">GO</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="rule">STOCK METRICS</div>
+
+{% if result %}
+  {% if result.error %}
+    <div class="stock-error">{{ result.error }}</div>
+  {% else %}
+    <div class="stock-header">
+      <div>
+        <span class="stock-symbol">{{ result.header.symbol }}</span>
+        <span class="stock-name">{{ result.header.name }}</span>
+      </div>
+      <div class="stock-sub">
+        {{ result.header.sector }} &nbsp;·&nbsp; {{ result.header.industry }}
+        &nbsp;·&nbsp; {{ result.header.exchange }} &nbsp;·&nbsp; {{ result.header.currency }}
+      </div>
+    </div>
+
+    {% if result.alternatives %}
+    <div class="alternatives">
+      Other matches: &nbsp;
+      {% for alt in result.alternatives %}
+        <a href="/stock?q={{ alt.symbol }}&period={{ period }}" style="color:var(--cyan);text-decoration:none">{{ alt.symbol }}</a>
+        <span>{{ alt.name }}</span>{% if not loop.last %} &nbsp;·&nbsp; {% endif %}
+      {% endfor %}
+    </div>
+    <br>
+    {% endif %}
+
+    <div class="metrics-grid">
+      {% for label, value in result.metrics %}
+      <div class="metric-cell">
+        <span class="metric-label">{{ label }}</span>
+        <span class="metric-value">{{ value }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if result.chart %}
+    <div class="chart-wrap">
+      <div class="chart-title">{{ result.chart.stock_label }} vs {{ result.chart.index_label }} — normalized to 100</div>
+      <div class="period-bar">
+        {% for p in periods %}
+          <a href="/stock?q={{ query }}&period={{ p }}"
+             class="period-btn {% if p == period %}active{% endif %}">{{ p.upper() }}</a>
+        {% endfor %}
+      </div>
+      <canvas id="priceChart" height="80"></canvas>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script>
+      const chartData = {{ result.chart | tojson }};
+      new Chart(document.getElementById('priceChart'), {
+        type: 'line',
+        data: {
+          labels: chartData.dates,
+          datasets: [
+            {
+              label: chartData.stock_label,
+              data: chartData.stock,
+              borderColor: '#2563eb',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.1,
+            },
+            {
+              label: chartData.index_label,
+              data: chartData.index,
+              borderColor: '#9ca3af',
+              borderWidth: 1,
+              pointRadius: 0,
+              tension: 0.1,
+            },
+          ]
+        },
+        options: {
+          animation: false,
+          plugins: {
+            legend: { labels: { color: '#6b7280', font: { family: 'monospace', size: 11 } } },
+          },
+          scales: {
+            x: {
+              ticks: { color: '#9ca3af', maxTicksLimit: 8, font: { family: 'monospace', size: 10 } },
+              grid: { color: '#f3f4f6' },
+            },
+            y: {
+              ticks: { color: '#9ca3af', font: { family: 'monospace', size: 10 } },
+              grid: { color: '#f3f4f6' },
+            },
+          },
+        },
+      });
+    </script>
+    {% endif %}
+  {% endif %}
+{% else %}
+  <p style="color:var(--dim); margin-top:1rem; font-size:12px;">Enter a company name or ticker above.</p>
+{% endif %}
+{% endblock %}

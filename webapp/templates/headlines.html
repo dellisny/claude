@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% set active = "headlines" %}
+
+{% block title %}Headlines{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .hl-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .hl-table tr {
+    border-bottom: 1px solid var(--border);
+  }
+  .hl-table tr:last-child { border-bottom: none; }
+  .hl-table tr:hover { background: var(--bg2); }
+  .hl-table td {
+    padding: 5px 6px;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .hl-table td.num {
+    color: var(--dim);
+    text-align: right;
+    width: 2.4rem;
+    font-size: 11px;
+  }
+  .hl-table td.tag {
+    width: 6.5rem;
+  }
+  .tag-pill {
+    display: inline-block;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    background: #2a2d35;
+    border-radius: 2px;
+  }
+  .hl-table td.title {
+    white-space: normal;
+    max-width: 0;
+    width: 99%;
+    overflow: hidden;
+  }
+  .hl-table td.title a {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .hl-table td.title a:hover { color: #000; text-decoration: underline; }
+  .hl-table td.age {
+    color: var(--dim);
+    font-size: 11px;
+    text-align: right;
+    width: 5rem;
+  }
+  .hl-table td.link-col {
+    width: 3.5rem;
+    text-align: center;
+  }
+  .hl-table td.link-col a {
+    color: #00b0cc;
+    font-size: 10px;
+    text-decoration: none;
+    letter-spacing: 0.05em;
+  }
+  .hl-table td.link-col a:hover { color: var(--cyan); text-decoration: underline; }
+
+  .summary { color: var(--dim); font-size: 11px; margin-top: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block toolbar %}
+<div class="toolbar">
+  <form method="get" action="/headlines">
+    <label>FILTER:</label>
+    <input type="text" name="q" value="{{ query }}" placeholder="keyword…" autocomplete="off">
+    <label>N:</label>
+    <input type="number" name="n" value="{{ count }}" min="1" max="100">
+    <button type="submit">GO</button>
+    {% if query %}<a href="/headlines?n={{ count }}" class="clear-btn">CLEAR</a>{% endif %}
+  </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="rule">
+  HEADLINES &nbsp; <span style="color:var(--dim); font-size:11px;">{{ timestamp }}</span>
+</div>
+
+{% if stories %}
+<table class="hl-table">
+  {% for s in stories %}
+  <tr>
+    <td class="num">{{ loop.index }}</td>
+    <td class="tag">
+      <span class="tag-pill" style="color: {{ s.color }}">{{ s.label }}</span>
+    </td>
+    <td class="title">
+      {% if s.url %}
+        <a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a>
+      {% else %}
+        {{ s.title }}
+      {% endif %}
+    </td>
+    <td class="age">{{ s.age }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<div class="summary">{{ stories|length }} headlines &nbsp;·&nbsp; {{ sources_seen }} sources</div>
+{% else %}
+  {% if query %}
+    <p style="color: var(--red); margin-top:1rem;">No headlines matching <strong>{{ query }}</strong>.</p>
+  {% else %}
+    <p style="color: var(--red); margin-top:1rem;">No headlines retrieved. Check your connection.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block footer %}
+{{ stories|length }} headlines &nbsp;·&nbsp; {{ sources_seen }} sources
+{% endblock %}

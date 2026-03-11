@@ -1,0 +1,940 @@
+{% extends "base.html" %}
+{% block title %}RobotWar{% endblock %}
+
+{% block extra_styles %}
+<style>
+  /* ── Page layout ─────────────────────────────────────────── */
+  .rw-wrap {
+    display: flex;
+    gap: 1.2rem;
+    align-items: flex-start;
+    padding: 0.8rem 0;
+  }
+
+  /* ── Left column ─────────────────────────────────────────── */
+  .rw-left {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+
+  #arena {
+    display: block;
+    border: 2px solid var(--yellow);
+    background: #000;
+    image-rendering: pixelated;
+  }
+
+  .rw-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .rw-controls button {
+    background: transparent;
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 14px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .rw-controls button:hover { background: rgba(255,214,0,0.1); }
+  .rw-controls button.stop-btn { border-color: var(--red); color: var(--red); }
+  .rw-controls button.stop-btn:hover { background: rgba(255,82,82,0.1); }
+  .rw-controls label { color: var(--dim); font-size: 11px; margin-left: 0.5rem; }
+  .rw-controls select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+
+  /* ── Damage bars ─────────────────────────────────────────── */
+  .rw-damage-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .dmg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .dmg-label {
+    width: 72px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dmg-track {
+    flex: 1;
+    height: 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .dmg-fill {
+    height: 100%;
+    transition: width 0.1s;
+  }
+  .dmg-pct {
+    width: 38px;
+    text-align: right;
+    color: var(--dim);
+  }
+  .dmg-status {
+    width: 60px;
+    color: var(--dim);
+    font-size: 10px;
+  }
+
+  /* ── Right column ─────────────────────────────────────────── */
+  .rw-right {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    min-width: 0;
+  }
+
+  /* ── Robot editors ───────────────────────────────────────── */
+  .robot-editors {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .robot-editor {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .editor-tab {
+    padding: 4px 10px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .editor-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .editor-name { color: var(--text); font-weight: 600; }
+  .editor-info { margin-left: auto; font-size: 10px; color: var(--dim); }
+  textarea.code-area {
+    width: 100%;
+    min-height: 130px;
+    background: #000;
+    color: var(--green);
+    border: none;
+    border-bottom: 1px solid var(--border);
+    font-family: "JetBrains Mono", "Fira Mono", "Consolas", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    padding: 6px 8px;
+    resize: vertical;
+    outline: none;
+  }
+  .error-line {
+    padding: 3px 8px;
+    font-size: 10px;
+    min-height: 18px;
+    color: var(--red);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Quick-ref ───────────────────────────────────────────── */
+  .quickref {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0.6rem 0.9rem;
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--dim);
+  }
+  .quickref h4 {
+    color: var(--yellow);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+  .quickref code {
+    color: var(--green);
+    font-family: inherit;
+  }
+
+  /* ── Tick counter ───────────────────────────────────────── */
+  .rw-tick { font-size: 11px; color: var(--dim); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">ROBOTWAR</div>
+
+<div class="rw-wrap">
+
+  <!-- LEFT: arena + controls + damage -->
+  <div class="rw-left">
+    <canvas id="arena" width="480" height="480"></canvas>
+
+    <div class="rw-controls">
+      <button id="btn-start">Start</button>
+      <button id="btn-stop" class="stop-btn" style="display:none">Stop</button>
+      <button id="btn-reset">Reset</button>
+      <label>Speed:</label>
+      <select id="speed-sel">
+        <option value="1">1×</option>
+        <option value="2">2×</option>
+        <option value="4" selected>4×</option>
+        <option value="8">8×</option>
+      </select>
+      <span class="rw-tick">Tick: <span id="tick-counter">0</span></span>
+    </div>
+
+    <div class="rw-damage-bars" id="damage-bars">
+      <!-- filled by JS -->
+    </div>
+  </div>
+
+  <!-- RIGHT: editors + quickref -->
+  <div class="rw-right">
+    <div class="robot-editors" id="robot-editors">
+      <!-- filled by JS -->
+    </div>
+
+    <div class="quickref">
+      <h4>Syntax Quick-Reference</h4>
+      <code>! comment</code> &nbsp;|&nbsp;
+      <code>;LABEL</code> &nbsp;|&nbsp;
+      <code>value TO reg</code> &nbsp;|&nbsp;
+      <code>ADD / SUB / MUL / DIV value TO reg</code><br>
+      <code>IF v1 = v2 JUMP label</code> &nbsp; ops: <code>= &lt; &gt; #</code> (not-equal) &nbsp;|&nbsp;
+      <code>JUMP label</code> &nbsp;|&nbsp;
+      <code>CALL label</code> &nbsp;|&nbsp;
+      <code>RETURN</code><br>
+      <strong style="color:var(--text)">Numbers 1–20 in source/dest → storage register N (pre-set reg1=1…reg20=20).
+      0 or ≥21 → literal.</strong><br>
+      <strong style="color:var(--text)">Named registers:</strong>
+      <code>AIM SHOT RADAR DAMAGE SPEED HEADING X Y HEAT RANDOM METERS</code>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+"use strict";
+
+// ── Constants ─────────────────────────────────────────────────────────────
+const ARENA   = 1000;
+const CANVAS  = 480;
+const SCALE   = CANVAS / ARENA;
+const INSTRS_PER_TICK = 8;
+const SHELL_SPEED = 15;
+const SHELL_HIT_R = 12;
+const SHELL_DMG   = 5;
+const WALL_DMG    = 2;
+const HEAT_PER_SHOT = 20;
+const HEAT_DECAY    = 2;
+
+const ROBOT_COLORS = ["#ff5252","#69f0ae","#40c4ff","#ea80fc"];
+const ROBOT_NAMES  = ["Robot 1","Robot 2","Robot 3","Robot 4"];
+const STARTS = [[50,50],[950,50],[50,950],[950,950]];
+
+// ── Default programs ──────────────────────────────────────────────────────
+const DEFAULT_PROGRAMS = [
+`! Spinner
+;SPIN
+ADD 5 TO AIM
+300 TO SHOT
+JUMP SPIN`,
+
+`! Tracker - radar lock
+;SCAN
+ADD 3 TO AIM
+RADAR TO 1
+IF 1 = 0 JUMP SCAN
+;LOCK
+RADAR TO 1
+IF 1 = 0 JUMP SCAN
+1 TO SHOT
+JUMP LOCK`,
+
+`! Random mover
+3 TO SPEED
+;RUN
+RANDOM TO HEADING
+ADD 17 TO AIM
+400 TO SHOT
+JUMP RUN`,
+
+`! Sniper - stationary radar hunter
+0 TO SPEED
+;HUNT
+ADD 1 TO AIM
+RADAR TO 1
+IF 1 = 0 JUMP HUNT
+;FIRE
+RADAR TO 1
+IF 1 = 0 JUMP HUNT
+1 TO SHOT
+JUMP FIRE`
+];
+
+// ── Parser / Compiler ─────────────────────────────────────────────────────
+function parseProgram(src) {
+  // Returns { instrs, labels, error }
+  const lines = src.split('\n');
+  const instrs = [];
+  const labels = {};
+  const errors = [];
+
+  for (let li = 0; li < lines.length; li++) {
+    let raw = lines[li];
+    // strip comment
+    const ci = raw.indexOf('!');
+    if (ci !== -1) raw = raw.substring(0, ci);
+    raw = raw.trim();
+    if (!raw) continue;
+
+    // label definition
+    if (raw.startsWith(';')) {
+      const lname = raw.substring(1).trim().toUpperCase();
+      if (!lname) { errors.push(`Line ${li+1}: empty label`); continue; }
+      labels[lname] = instrs.length;
+      continue;
+    }
+
+    const parts = raw.toUpperCase().split(/\s+/);
+    const op = parts[0];
+
+    if (op === 'JUMP') {
+      if (parts.length < 2) { errors.push(`Line ${li+1}: JUMP needs label`); continue; }
+      instrs.push({ op:'JUMP', label: parts[1] });
+    } else if (op === 'CALL') {
+      if (parts.length < 2) { errors.push(`Line ${li+1}: CALL needs label`); continue; }
+      instrs.push({ op:'CALL', label: parts[1] });
+    } else if (op === 'RETURN') {
+      instrs.push({ op:'RETURN' });
+    } else if (op === 'IF') {
+      // IF v1 CMP v2 JUMP label
+      if (parts.length < 6 || parts[4] !== 'JUMP') {
+        errors.push(`Line ${li+1}: IF syntax: IF v1 op v2 JUMP label`); continue;
+      }
+      const cmp = parts[2];
+      if (!['=','<','>','#'].includes(cmp)) {
+        errors.push(`Line ${li+1}: unknown operator '${cmp}'`); continue;
+      }
+      instrs.push({ op:'IF', v1:parts[1], cmp, v2:parts[3], label:parts[5] });
+    } else if (['ADD','SUB','MUL','DIV'].includes(op)) {
+      // ADD value TO reg
+      if (parts.length < 4 || parts[2] !== 'TO') {
+        errors.push(`Line ${li+1}: ${op} syntax: ${op} value TO reg`); continue;
+      }
+      instrs.push({ op, src: parts[1], dst: parts[3] });
+    } else if (parts.length >= 3 && parts[1] === 'TO') {
+      // value TO register
+      instrs.push({ op:'SET', src: parts[0], dst: parts[2] });
+    } else {
+      errors.push(`Line ${li+1}: unknown instruction '${raw}'`);
+    }
+  }
+
+  if (errors.length) return { instrs:null, labels:null, error: errors.join('; ') };
+  return { instrs, labels, error: null };
+}
+
+// ── Robot state factory ───────────────────────────────────────────────────
+function makeRobot(idx, instrs, labels) {
+  return {
+    idx,
+    alive: true,
+    x: STARTS[idx][0],
+    y: STARTS[idx][1],
+    // named registers
+    aim: 0,
+    speed: 0,
+    heading: 0,
+    damage: 0,
+    heat: 0,
+    meters: 0,
+    shotPending: 0,   // >0 means fire this tick with that range
+    // storage registers 1-20 (index 0 unused)
+    reg: Array.from({length:21}, (_,i) => i),
+    // program state
+    instrs,
+    labels,
+    pc: 0,
+    callStack: [],
+    tickDeath: null,
+  };
+}
+
+// ── Value read / write helpers ────────────────────────────────────────────
+const NAMED_REGS = new Set(['AIM','SHOT','RADAR','DAMAGE','SPEED','HEADING','X','Y','HEAT','RANDOM','METERS']);
+
+function readVal(tok, robot, robots) {
+  if (NAMED_REGS.has(tok)) {
+    switch (tok) {
+      case 'AIM':     return robot.aim;
+      case 'SHOT':    return robot.shotPending;
+      case 'RADAR':   return doRadar(robot, robots);
+      case 'DAMAGE':  return robot.damage;
+      case 'SPEED':   return robot.speed;
+      case 'HEADING': return robot.heading;
+      case 'X':       return Math.round(robot.x);
+      case 'Y':       return Math.round(robot.y);
+      case 'HEAT':    return robot.heat;
+      case 'RANDOM':  return Math.floor(Math.random() * 360);
+      case 'METERS':  return Math.round(robot.meters);
+    }
+  }
+  const n = parseInt(tok, 10);
+  if (isNaN(n)) return 0;
+  if (n >= 1 && n <= 20) return robot.reg[n];
+  return n; // 0 or >=21 is literal
+}
+
+function writeVal(tok, val, robot) {
+  val = Math.trunc(val);
+  if (NAMED_REGS.has(tok)) {
+    switch (tok) {
+      case 'AIM':     robot.aim = ((val % 360) + 360) % 360; break;
+      case 'SHOT':    robot.shotPending = val; break;
+      case 'DAMAGE':  robot.damage = val; break;
+      case 'SPEED':   robot.speed = Math.max(0, Math.min(5, val)); break;
+      case 'HEADING': robot.heading = ((val % 360) + 360) % 360; break;
+      case 'X':       /* read-only in spec */ break;
+      case 'Y':       /* read-only in spec */ break;
+      case 'HEAT':    /* read-only */ break;
+      case 'RANDOM':  /* read-only */ break;
+      case 'METERS':  if (val === 0) robot.meters = 0; break;
+      case 'RADAR':   /* read-only */ break;
+    }
+    return;
+  }
+  const n = parseInt(tok, 10);
+  if (!isNaN(n) && n >= 1 && n <= 20) {
+    robot.reg[n] = val;
+  }
+  // 0 or >=21 — write to nowhere (literal destination)
+}
+
+function doRadar(robot, robots) {
+  const aimRad = robot.aim * Math.PI / 180;
+  let best = 0;
+  for (const other of robots) {
+    if (other === robot || !other.alive) continue;
+    const dx = other.x - robot.x;
+    const dy = other.y - robot.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist === 0) continue;
+    // angle to other in degrees
+    let ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (ang < 0) ang += 360;
+    let diff = Math.abs(ang - robot.aim);
+    if (diff > 180) diff = 360 - diff;
+    if (diff <= 5) {
+      if (best === 0 || dist < best) best = Math.round(dist);
+    }
+  }
+  return best;
+}
+
+// ── Execute one instruction ───────────────────────────────────────────────
+function execOne(robot, robots) {
+  if (!robot.alive || robot.instrs.length === 0) return;
+  // wrap PC
+  if (robot.pc >= robot.instrs.length) robot.pc = 0;
+  const instr = robot.instrs[robot.pc];
+  robot.pc++;
+
+  switch (instr.op) {
+    case 'SET': {
+      const v = readVal(instr.src, robot, robots);
+      writeVal(instr.dst, v, robot);
+      break;
+    }
+    case 'ADD': {
+      const v = readVal(instr.src, robot, robots);
+      const cur = readVal(instr.dst, robot, robots);
+      writeVal(instr.dst, cur + v, robot);
+      break;
+    }
+    case 'SUB': {
+      const v = readVal(instr.src, robot, robots);
+      const cur = readVal(instr.dst, robot, robots);
+      writeVal(instr.dst, cur - v, robot);
+      break;
+    }
+    case 'MUL': {
+      const v = readVal(instr.src, robot, robots);
+      const cur = readVal(instr.dst, robot, robots);
+      writeVal(instr.dst, cur * v, robot);
+      break;
+    }
+    case 'DIV': {
+      const v = readVal(instr.src, robot, robots);
+      if (v === 0) break; // ignore
+      const cur = readVal(instr.dst, robot, robots);
+      writeVal(instr.dst, Math.trunc(cur / v), robot);
+      break;
+    }
+    case 'JUMP': {
+      const target = robot.labels[instr.label];
+      if (target !== undefined) robot.pc = target;
+      break;
+    }
+    case 'CALL': {
+      const target = robot.labels[instr.label];
+      if (target !== undefined) {
+        robot.callStack.push(robot.pc);
+        robot.pc = target;
+      }
+      break;
+    }
+    case 'RETURN': {
+      if (robot.callStack.length) robot.pc = robot.callStack.pop();
+      break;
+    }
+    case 'IF': {
+      const v1 = readVal(instr.v1, robot, robots);
+      const v2 = readVal(instr.v2, robot, robots);
+      let cond = false;
+      switch (instr.cmp) {
+        case '=': cond = v1 === v2; break;
+        case '<': cond = v1 <   v2; break;
+        case '>': cond = v1 >   v2; break;
+        case '#': cond = v1 !== v2; break;
+      }
+      if (cond) {
+        const target = robot.labels[instr.label];
+        if (target !== undefined) robot.pc = target;
+      }
+      break;
+    }
+  }
+}
+
+// ── Shell factory ─────────────────────────────────────────────────────────
+function makeShell(robot) {
+  const rad = robot.aim * Math.PI / 180;
+  return {
+    x: robot.x,
+    y: robot.y,
+    vx: Math.cos(rad) * SHELL_SPEED,
+    vy: Math.sin(rad) * SHELL_SPEED,
+    maxRange: robot.shotPending,
+    traveled: 0,
+    ownerIdx: robot.idx,
+  };
+}
+
+// ── Game state ─────────────────────────────────────────────────────────────
+let robots = [];
+let shells = [];
+let tick = 0;
+let running = false;
+let rafId = null;
+let gameOver = false;
+let gameOverMsg = '';
+
+// ── Compile all editors ────────────────────────────────────────────────────
+function compileAll() {
+  const results = [];
+  for (let i = 0; i < 4; i++) {
+    const ta = document.getElementById(`code-${i}`);
+    const errEl = document.getElementById(`err-${i}`);
+    const infoEl = document.getElementById(`info-${i}`);
+    const parsed = parseProgram(ta.value);
+    if (parsed.error) {
+      errEl.textContent = parsed.error;
+      infoEl.textContent = 'DEAD (parse error)';
+      results.push({ ok: false });
+    } else {
+      errEl.textContent = '';
+      infoEl.textContent = `${parsed.instrs.length} instructions`;
+      results.push({ ok: true, instrs: parsed.instrs, labels: parsed.labels });
+    }
+  }
+  return results;
+}
+
+function initGame() {
+  const compiled = compileAll();
+  robots = [];
+  shells = [];
+  tick = 0;
+  gameOver = false;
+  gameOverMsg = '';
+  document.getElementById('tick-counter').textContent = '0';
+
+  for (let i = 0; i < 4; i++) {
+    const r = makeRobot(i, compiled[i].ok ? compiled[i].instrs : [], compiled[i].ok ? compiled[i].labels : {});
+    if (!compiled[i].ok) {
+      r.alive = false;
+      r.tickDeath = 0;
+    }
+    robots.push(r);
+  }
+  updateDamageBars();
+  renderCanvas();
+}
+
+// ── Game tick ─────────────────────────────────────────────────────────────
+function gameTick() {
+  tick++;
+  document.getElementById('tick-counter').textContent = tick;
+
+  // Execute instructions
+  for (const robot of robots) {
+    if (!robot.alive) continue;
+    robot.shotPending = 0;
+    for (let i = 0; i < INSTRS_PER_TICK; i++) {
+      if (robot.pc >= robot.instrs.length) robot.pc = 0;
+      execOne(robot, robots);
+    }
+  }
+
+  // Fire shells
+  for (const robot of robots) {
+    if (!robot.alive) continue;
+    if (robot.shotPending > 0 && robot.heat < 100) {
+      shells.push(makeShell(robot));
+      robot.heat = Math.min(100, robot.heat + HEAT_PER_SHOT);
+      robot.shotPending = 0;
+    }
+  }
+
+  // Move robots
+  for (const robot of robots) {
+    if (!robot.alive) continue;
+    const rad = robot.heading * Math.PI / 180;
+    const dx = Math.cos(rad) * robot.speed;
+    const dy = Math.sin(rad) * robot.speed;
+    robot.x += dx;
+    robot.y += dy;
+    robot.meters += Math.sqrt(dx*dx + dy*dy);
+
+    // Wall collision
+    let wallHit = false;
+    if (robot.x < 0)    { robot.x = 0;    wallHit = true; }
+    if (robot.x > ARENA){ robot.x = ARENA; wallHit = true; }
+    if (robot.y < 0)    { robot.y = 0;     wallHit = true; }
+    if (robot.y > ARENA){ robot.y = ARENA; wallHit = true; }
+    if (wallHit) {
+      robot.damage += WALL_DMG;
+      robot.speed = 0;
+    }
+  }
+
+  // Move & check shells
+  const nextShells = [];
+  for (const shell of shells) {
+    shell.x += shell.vx;
+    shell.y += shell.vy;
+    shell.traveled += SHELL_SPEED;
+
+    if (shell.x < 0 || shell.x > ARENA || shell.y < 0 || shell.y > ARENA) continue;
+    if (shell.traveled > shell.maxRange) continue;
+
+    let hit = false;
+    for (const robot of robots) {
+      if (!robot.alive) continue;
+      if (robot.idx === shell.ownerIdx) continue;
+      const dx = robot.x - shell.x;
+      const dy = robot.y - shell.y;
+      if (Math.sqrt(dx*dx + dy*dy) < SHELL_HIT_R) {
+        robot.damage += SHELL_DMG;
+        hit = true;
+        break;
+      }
+    }
+    if (!hit) nextShells.push(shell);
+  }
+  shells = nextShells;
+
+  // Heat decay
+  for (const robot of robots) {
+    if (!robot.alive) continue;
+    robot.heat = Math.max(0, robot.heat - HEAT_DECAY);
+  }
+
+  // Kill robots
+  for (const robot of robots) {
+    if (robot.alive && robot.damage >= 100) {
+      robot.alive = false;
+      robot.tickDeath = tick;
+      // update editor info
+      const infoEl = document.getElementById(`info-${robot.idx}`);
+      if (infoEl) infoEl.textContent = `DEAD at tick ${tick}`;
+    }
+  }
+
+  // Check game-over
+  const alive = robots.filter(r => r.alive);
+  if (alive.length <= 1) {
+    gameOver = true;
+    if (alive.length === 1) {
+      gameOverMsg = `ROBOT ${alive[0].idx+1} WINS`;
+    } else {
+      gameOverMsg = 'DRAW — ALL DESTROYED';
+    }
+  }
+
+  updateDamageBars();
+  renderCanvas();
+}
+
+// ── Canvas rendering ──────────────────────────────────────────────────────
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+
+function toCanvasX(x) { return x * SCALE; }
+function toCanvasY(y) { return y * SCALE; }
+
+function renderCanvas() {
+  ctx.clearRect(0, 0, CANVAS, CANVAS);
+
+  // Background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, CANVAS, CANVAS);
+
+  // Grid
+  ctx.strokeStyle = '#0d0d0d';
+  ctx.lineWidth = 0.5;
+  const gridStep = 100 * SCALE;
+  for (let x = 0; x <= CANVAS; x += gridStep) {
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CANVAS); ctx.stroke();
+  }
+  for (let y = 0; y <= CANVAS; y += gridStep) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CANVAS,y); ctx.stroke();
+  }
+
+  // Arena border
+  ctx.strokeStyle = '#ffd600';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(0.75, 0.75, CANVAS-1.5, CANVAS-1.5);
+
+  // Shells
+  for (const shell of shells) {
+    ctx.fillStyle = '#ffd600';
+    ctx.beginPath();
+    ctx.arc(toCanvasX(shell.x), toCanvasY(shell.y), 2.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Robots
+  const R = 10; // canvas-space radius
+  for (const robot of robots) {
+    const cx = toCanvasX(robot.x);
+    const cy = toCanvasY(robot.y);
+    const color = ROBOT_COLORS[robot.idx];
+
+    if (!robot.alive) {
+      // Gray X
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx-R, cy-R); ctx.lineTo(cx+R, cy+R);
+      ctx.moveTo(cx+R, cy-R); ctx.lineTo(cx-R, cy+R);
+      ctx.stroke();
+      continue;
+    }
+
+    // Health bar above robot
+    const hpFrac = Math.max(0, 1 - robot.damage/100);
+    const barW = R*2+4;
+    const barX = cx - barW/2;
+    const barY = cy - R - 8;
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(barX, barY, barW, 4);
+    ctx.fillStyle = hpFrac > 0.5 ? '#69f0ae' : hpFrac > 0.25 ? '#ffd600' : '#ff5252';
+    ctx.fillRect(barX, barY, barW * hpFrac, 4);
+
+    // Body circle
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.stroke();
+
+    // Turret line
+    const aimRad = robot.aim * Math.PI / 180;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(aimRad)*R*1.4, cy + Math.sin(aimRad)*R*1.4);
+    ctx.stroke();
+
+    // Number
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(robot.idx+1, cx, cy);
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  // Game-over banner
+  if (gameOver && gameOverMsg) {
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, CANVAS/2-28, CANVAS, 56);
+    ctx.strokeStyle = '#ffd600';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(20, CANVAS/2-28, CANVAS-40, 56);
+    ctx.fillStyle = '#ffd600';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(gameOverMsg, CANVAS/2, CANVAS/2);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+// ── Damage bars ───────────────────────────────────────────────────────────
+function updateDamageBars() {
+  const container = document.getElementById('damage-bars');
+  for (let i = 0; i < 4; i++) {
+    const fill = document.getElementById(`dmg-fill-${i}`);
+    const pct  = document.getElementById(`dmg-pct-${i}`);
+    const stat = document.getElementById(`dmg-stat-${i}`);
+    if (!fill) continue;
+    const r = robots[i];
+    const d = r ? Math.min(100, r.damage) : 0;
+    fill.style.width = d + '%';
+    fill.style.background = d < 50 ? '#69f0ae' : d < 75 ? '#ffd600' : '#ff5252';
+    if (pct) pct.textContent = d + '%';
+    if (stat) {
+      if (!r || !r.alive) {
+        stat.textContent = r && r.tickDeath !== null ? `died t${r.tickDeath}` : 'dead';
+        stat.style.color = '#ff5252';
+      } else {
+        stat.textContent = 'alive';
+        stat.style.color = '#69f0ae';
+      }
+    }
+  }
+}
+
+// ── RAF game loop ─────────────────────────────────────────────────────────
+let lastTime = 0;
+const FRAME_MS = 1000/30; // 30fps target
+
+function loop(now) {
+  if (!running) return;
+  if (now - lastTime >= FRAME_MS) {
+    lastTime = now;
+    const steps = parseInt(document.getElementById('speed-sel').value, 10);
+    for (let s = 0; s < steps && !gameOver; s++) gameTick();
+    if (gameOver) stopGame();
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+function startGame() {
+  if (running) return;
+  running = true;
+  document.getElementById('btn-start').style.display = 'none';
+  document.getElementById('btn-stop').style.display = '';
+  lastTime = 0;
+  rafId = requestAnimationFrame(loop);
+}
+
+function stopGame() {
+  running = false;
+  document.getElementById('btn-start').style.display = '';
+  document.getElementById('btn-stop').style.display = 'none';
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+}
+
+function resetGame() {
+  stopGame();
+  // restore default code to editors
+  for (let i = 0; i < 4; i++) {
+    document.getElementById(`code-${i}`).value = DEFAULT_PROGRAMS[i];
+    document.getElementById(`err-${i}`).textContent = '';
+  }
+  initGame();
+}
+
+// ── Build UI ──────────────────────────────────────────────────────────────
+function buildEditors() {
+  const container = document.getElementById('robot-editors');
+  container.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const color = ROBOT_COLORS[i];
+    const div = document.createElement('div');
+    div.className = 'robot-editor';
+    div.innerHTML = `
+      <div class="editor-tab">
+        <span class="editor-dot" style="background:${color}"></span>
+        <span class="editor-name" style="color:${color}">Robot ${i+1}</span>
+        <span class="editor-info" id="info-${i}"></span>
+      </div>
+      <textarea class="code-area" id="code-${i}" spellcheck="false" rows="12">${DEFAULT_PROGRAMS[i]}</textarea>
+      <div class="error-line" id="err-${i}"></div>
+    `;
+    container.appendChild(div);
+  }
+}
+
+function buildDamageBars() {
+  const container = document.getElementById('damage-bars');
+  container.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const color = ROBOT_COLORS[i];
+    const row = document.createElement('div');
+    row.className = 'dmg-row';
+    row.innerHTML = `
+      <span class="dmg-label" style="color:${color}">Robot ${i+1}</span>
+      <div class="dmg-track" style="width:220px">
+        <div class="dmg-fill" id="dmg-fill-${i}" style="width:0%;background:#69f0ae"></div>
+      </div>
+      <span class="dmg-pct" id="dmg-pct-${i}">0%</span>
+      <span class="dmg-status" id="dmg-stat-${i}" style="color:#69f0ae">alive</span>
+    `;
+    container.appendChild(row);
+  }
+}
+
+// ── Wire buttons ──────────────────────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', () => {
+  initGame();
+  startGame();
+});
+document.getElementById('btn-stop').addEventListener('click', stopGame);
+document.getElementById('btn-reset').addEventListener('click', resetGame);
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+buildEditors();
+buildDamageBars();
+initGame();
+
+})();
+</script>
+{% endblock %}

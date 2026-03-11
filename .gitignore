@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+
+# Compiled binaries
+btree/btree
+err/snake
+hnt/pHNT
+
+# Logs
+*.log
+
+# OS
+.DS_Store
