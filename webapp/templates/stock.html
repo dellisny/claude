@@ -58,6 +58,19 @@
   .alternatives { color: var(--dim); font-size: 11px; margin-top: 0.5rem; }
   .alternatives span { color: var(--text); }
   .stock-error { color: var(--red); margin-top: 1rem; }
+
+  .news-section {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .news-title { color: var(--dim); font-size: 11px; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
+  .news-item { padding: 0.35rem 0; border-top: 1px solid var(--border); }
+  .news-item:first-child { border-top: none; }
+  .news-headline { color: var(--text); font-size: 13px; text-decoration: none; }
+  .news-headline:hover { color: var(--cyan); }
+  .news-meta { color: var(--dim); font-size: 10px; margin-top: 2px; }
 </style>
 {% endblock %}
 
@@ -109,6 +122,22 @@
       </div>
       {% endfor %}
     </div>
+
+    {% if result.news %}
+    <div class="news-section">
+      <div class="news-title">TOP NEWS</div>
+      {% for item in result.news %}
+      <div class="news-item">
+        {% if item.url %}
+          <a class="news-headline" href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a>
+        {% else %}
+          <span class="news-headline">{{ item.title }}</span>
+        {% endif %}
+        <div class="news-meta">{{ item.publisher }}{% if item.publisher and item.date %} &nbsp;·&nbsp; {% endif %}{{ item.date }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     {% if result.chart %}
     <div class="chart-wrap">

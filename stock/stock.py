@@ -136,7 +136,7 @@ def get_price_fcf(info: dict, cashflow) -> str:
 
 
 def fetch_metrics(symbol: str):
-    """Return (info dict, cashflow df) for the given ticker."""
+    """Return (info dict, cashflow df, news list) for the given ticker."""
     with console.status(f"[bold cyan]Fetching data for {symbol}...[/]"):
         ticker = yf.Ticker(symbol)
         info = ticker.info
@@ -144,7 +144,11 @@ def fetch_metrics(symbol: str):
             cashflow = ticker.cashflow
         except Exception:
             cashflow = None
-    return info, cashflow
+        try:
+            news = ticker.news or []
+        except Exception:
+            news = []
+    return info, cashflow, news
 
 
 def select_index(info: dict) -> tuple[str, str]:
@@ -238,6 +242,26 @@ def render_metrics(symbol: str, info: dict, cashflow):
     console.print(table)
 
 
+def render_news(news: list, limit: int = 5):
+    """Print top news headlines."""
+    if not news:
+        console.print("[dim]No recent news found.[/]\n")
+        return
+
+    console.print("[bold cyan]Top News[/]")
+    for i, item in enumerate(news[:limit], 1):
+        content = item.get("content", {})
+        title = content.get("title") or item.get("title") or "(no title)"
+        provider = (content.get("provider") or {}).get("displayName") or item.get("publisher", "")
+        pub_date = content.get("pubDate") or ""
+        date_str = pub_date[:10] if pub_date else ""
+        meta = "  ".join(filter(None, [provider, date_str]))
+        console.print(f"  [bold white]{i}.[/] {title}")
+        if meta:
+            console.print(f"     [dim]{meta}[/]")
+    console.print()
+
+
 def render_chart(symbol: str, index_symbol: str, index_label: str, period: str):
     yf_period = PERIOD_MAP.get(period, "1y")
     label_period = period.upper()
@@ -314,7 +338,7 @@ def main(company_name: str, period: str):
     or ticker ("AAPL").
     """
     symbol, _name = resolve_ticker(company_name)
-    info, cashflow = fetch_metrics(symbol)
+    info, cashflow, news = fetch_metrics(symbol)
 
     if not info or info.get("quoteType") not in ("EQUITY", "ETF", None):
         # quoteType may be absent for some tickers — proceed anyway
@@ -327,6 +351,7 @@ def main(company_name: str, period: str):
     console.print()
     render_metrics(symbol, info, cashflow)
     console.print()
+    render_news(news)
     render_chart(symbol, index_symbol, index_label, period)
 
 

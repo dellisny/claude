@@ -436,6 +436,8 @@ def fetch_stock(query: str, period: str) -> dict:
         info = ticker.info
         try:    cashflow = ticker.cashflow
         except Exception: cashflow = None
+        try:    raw_news = ticker.news or []
+        except Exception: raw_news = []
     except Exception as e:
         return {"error": str(e)}
 
@@ -490,6 +492,16 @@ def fetch_stock(query: str, period: str) -> dict:
             ("52W Range",     f"{_fmt_price(lo52)} / {_fmt_price(hi52)}" if lo52 and hi52 else "N/A"),
         ],
         "chart": chart,
+        "news": [
+            {
+                "title": (item.get("content") or {}).get("title") or item.get("title", ""),
+                "publisher": ((item.get("content") or {}).get("provider") or {}).get("displayName") or item.get("publisher", ""),
+                "date": ((item.get("content") or {}).get("pubDate") or "")[:10],
+                "url": ((item.get("content") or {}).get("canonicalUrl") or {}).get("url") or item.get("link", ""),
+            }
+            for item in raw_news[:5]
+            if (item.get("content") or {}).get("title") or item.get("title")
+        ],
         "alternatives": [
             {"symbol": r.get("symbol", ""), "name": r.get("longname") or r.get("shortname", "")}
             for r in equities[1:4]
