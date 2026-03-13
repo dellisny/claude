@@ -92,6 +92,12 @@
   {% if result.error %}
     <div class="stock-error">{{ result.error }}</div>
   {% else %}
+    {% if result.interpreted_as %}
+    <div class="alternatives" style="margin-bottom:0.5rem">
+      Interpreted <span style="color:var(--text)">"{{ query }}"</span> as
+      <span style="color:var(--cyan)">{{ result.interpreted_as }}</span>
+    </div>
+    {% endif %}
     <div class="stock-header">
       <div>
         <span class="stock-symbol">{{ result.header.symbol }}</span>

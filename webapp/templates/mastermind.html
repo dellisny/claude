@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% block title %}Mastermind{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .mm-wrap {
+    max-width: 540px;
+    margin: 1.5rem auto;
+  }
+  .mm-title {
+    color: var(--yellow);
+    font-size: 16px;
+    letter-spacing: 0.15em;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+    text-align: center;
+  }
+  .mm-sub {
+    color: var(--dim);
+    font-size: 11px;
+    text-align: center;
+    margin-bottom: 1.2rem;
+  }
+
+  /* Peg slots (picker) */
+  .mm-picker {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+  }
+  .mm-picker-label {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+  .mm-slots {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-bottom: 0.8rem;
+  }
+  .mm-slot {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    transition: transform 0.1s, box-shadow 0.1s;
+    user-select: none;
+  }
+  .mm-slot:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  .mm-slot[data-color="0"] { background: var(--bg3); color: var(--dim); }
+  .mm-slot[data-color="1"] { background: #ef4444; border-color: #dc2626; }
+  .mm-slot[data-color="2"] { background: #3b82f6; border-color: #2563eb; }
+  .mm-slot[data-color="3"] { background: #22c55e; border-color: #16a34a; }
+  .mm-slot[data-color="4"] { background: #eab308; border-color: #ca8a04; color: #333; }
+  .mm-slot[data-color="5"] { background: #f97316; border-color: #ea580c; }
+  .mm-slot[data-color="6"] { background: #a855f7; border-color: #9333ea; }
+
+  .mm-legend {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.8rem;
+  }
+  .mm-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 11px;
+    color: var(--dim);
+    cursor: pointer;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    user-select: none;
+  }
+  .mm-legend-item:hover { border-color: var(--yellow); color: var(--text); }
+  .mm-legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Buttons */
+  .mm-btn {
+    background: transparent;
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 18px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .mm-btn:hover { background: rgba(217,119,6,0.1); }
+  .mm-btn:disabled { opacity: 0.4; cursor: default; }
+  .mm-btn.dim { border-color: var(--dim); color: var(--dim); }
+  .mm-btn.dim:hover { border-color: var(--text); color: var(--text); }
+  .mm-btn-row { display: flex; gap: 0.5rem; align-items: center; }
+
+  /* Board */
+  .mm-board {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    margin-bottom: 0.8rem;
+  }
+  .mm-board-header {
+    display: grid;
+    grid-template-columns: 28px 1fr 80px;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .mm-row {
+    display: grid;
+    grid-template-columns: 28px 1fr 80px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--bg3);
+    align-items: center;
+  }
+  .mm-row:last-child { border-bottom: none; }
+  .mm-row.latest { background: rgba(217,119,6,0.06); }
+  .mm-row-num { color: var(--dim); font-size: 11px; }
+  .mm-pegs { display: flex; gap: 5px; align-items: center; }
+  .mm-peg {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.12);
+    flex-shrink: 0;
+  }
+  .mm-peg[data-color="1"] { background: #ef4444; }
+  .mm-peg[data-color="2"] { background: #3b82f6; }
+  .mm-peg[data-color="3"] { background: #22c55e; }
+  .mm-peg[data-color="4"] { background: #eab308; }
+  .mm-peg[data-color="5"] { background: #f97316; }
+  .mm-peg[data-color="6"] { background: #a855f7; }
+  .mm-feedback { display: flex; gap: 3px; flex-wrap: wrap; max-width: 74px; }
+  .mm-fb-dot { width: 11px; height: 11px; border-radius: 50%; }
+  .mm-fb-dot.black { background: #111827; }
+  .mm-fb-dot.white { background: #fff; border: 1px solid #9ca3af; }
+
+  /* Status */
+  .mm-status-bar {
+    text-align: center;
+    padding: 0.8rem;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .mm-status-bar.won  { color: var(--green); }
+  .mm-status-bar.lost { color: var(--red); }
+
+  .mm-guesses-left {
+    color: var(--dim);
+    font-size: 11px;
+    margin-left: auto;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mm-wrap">
+  <div class="mm-title">MASTERMIND</div>
+  <div class="mm-sub">I've picked a secret 4-peg code — crack it in 12 guesses.</div>
+
+  <div id="mm-start-wrap" style="text-align:center; margin-bottom:1rem;">
+    <button class="mm-btn" onclick="startGame()">NEW GAME</button>
+  </div>
+
+  <div id="mm-game-wrap" style="display:none;">
+    <!-- Guess picker -->
+    <div class="mm-picker" id="mm-picker">
+      <div class="mm-picker-label">Your guess — click pegs to set colors, then submit</div>
+      <div class="mm-slots">
+        <div class="mm-slot" data-color="0" data-pos="0" onclick="cycleColor(0)">?</div>
+        <div class="mm-slot" data-color="0" data-pos="1" onclick="cycleColor(1)">?</div>
+        <div class="mm-slot" data-color="0" data-pos="2" onclick="cycleColor(2)">?</div>
+        <div class="mm-slot" data-color="0" data-pos="3" onclick="cycleColor(3)">?</div>
+      </div>
+      <div class="mm-legend">
+        <div class="mm-legend-item" onclick="fillAll(1)"><div class="mm-legend-dot" style="background:#ef4444"></div>1·Red</div>
+        <div class="mm-legend-item" onclick="fillAll(2)"><div class="mm-legend-dot" style="background:#3b82f6"></div>2·Blue</div>
+        <div class="mm-legend-item" onclick="fillAll(3)"><div class="mm-legend-dot" style="background:#22c55e"></div>3·Green</div>
+        <div class="mm-legend-item" onclick="fillAll(4)"><div class="mm-legend-dot" style="background:#eab308"></div>4·Yellow</div>
+        <div class="mm-legend-item" onclick="fillAll(5)"><div class="mm-legend-dot" style="background:#f97316"></div>5·Orange</div>
+        <div class="mm-legend-item" onclick="fillAll(6)"><div class="mm-legend-dot" style="background:#a855f7"></div>6·Purple</div>
+      </div>
+      <div class="mm-btn-row">
+        <button class="mm-btn" id="submit-btn" onclick="submitGuess()" disabled>SUBMIT GUESS</button>
+        <button class="mm-btn dim" onclick="resetGame()">NEW GAME</button>
+        <span class="mm-guesses-left" id="guesses-left"></span>
+      </div>
+    </div>
+
+    <!-- Board -->
+    <div class="mm-board" id="mm-board" style="display:none;">
+      <div class="mm-board-header">
+        <span>#</span><span>Guess</span><span>Feedback</span>
+      </div>
+      <div id="mm-rows"></div>
+    </div>
+
+    <div id="mm-status-bar"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block footer %}Mastermind — ● exact position &nbsp; ○ right color, wrong spot{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const COLOR_NAME = ["","Red","Blue","Green","Yellow","Orange","Purple"];
+let slots = [0,0,0,0];
+let gameState = null;
+
+function cycleColor(pos) {
+  if (gameState && gameState.status !== "playing") return;
+  slots[pos] = (slots[pos] % 6) + 1;
+  renderSlots();
+}
+
+function fillAll(color) {
+  if (gameState && gameState.status !== "playing") return;
+  slots = [color, color, color, color];
+  renderSlots();
+}
+
+function renderSlots() {
+  slots.forEach((c, i) => {
+    const el = document.querySelector(`.mm-slot[data-pos="${i}"]`);
+    el.dataset.color = c;
+    el.textContent = c === 0 ? "?" : "";
+  });
+  const ready = slots.every(c => c > 0);
+  document.getElementById("submit-btn").disabled = !ready || (gameState && gameState.status !== "playing");
+}
+
+function pegHTML(c) {
+  return `<div class="mm-peg" data-color="${c}" title="${COLOR_NAME[c]}"></div>`;
+}
+
+function feedbackHTML(black, white) {
+  let dots = "";
+  for (let i = 0; i < black; i++) dots += `<div class="mm-fb-dot black" title="Exact position"></div>`;
+  for (let i = 0; i < white; i++) dots += `<div class="mm-fb-dot white" title="Right color, wrong spot"></div>`;
+  return `<div class="mm-feedback">${dots}</div>`;
+}
+
+function renderBoard(state) {
+  const board = document.getElementById("mm-board");
+  const rows  = document.getElementById("mm-rows");
+
+  if (!state.guesses.length) {
+    board.style.display = "none";
+    return;
+  }
+  board.style.display = "block";
+  rows.innerHTML = "";
+
+  state.guesses.forEach((g, i) => {
+    const row = document.createElement("div");
+    row.className = "mm-row" + (i === state.guesses.length - 1 ? " latest" : "");
+    row.innerHTML = `
+      <span class="mm-row-num">${i+1}</span>
+      <div class="mm-pegs">${g.guess.map(pegHTML).join("")}</div>
+      ${feedbackHTML(g.black, g.white)}
+    `;
+    rows.appendChild(row);
+  });
+
+  const left = state.max - state.guesses.length;
+  const statusBar = document.getElementById("mm-status-bar");
+  const picker    = document.getElementById("mm-picker");
+
+  document.getElementById("guesses-left").textContent =
+    state.status === "playing" ? `${left} guess${left!==1?"es":""} remaining` : "";
+
+  if (state.status === "won") {
+    const n = state.guesses.length;
+    statusBar.className = "mm-status-bar won";
+    statusBar.textContent = `You cracked it in ${n} guess${n!==1?"es":""}!`;
+    picker.style.display = "none";
+  } else if (state.status === "lost") {
+    const secret = state.secret ? state.secret.map(pegHTML).join("") : "";
+    statusBar.className = "mm-status-bar lost";
+    statusBar.innerHTML = `Out of guesses! The code was: <span style="display:inline-flex;gap:4px;vertical-align:middle">${secret}</span>`;
+    picker.style.display = "none";
+  } else {
+    statusBar.className = "";
+    statusBar.textContent = "";
+  }
+}
+
+async function post(url, body) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return r.json();
+}
+
+async function startGame() {
+  slots = [0,0,0,0];
+  gameState = await post("/mastermind/start");
+  document.getElementById("mm-start-wrap").style.display = "none";
+  document.getElementById("mm-game-wrap").style.display  = "block";
+  document.getElementById("mm-picker").style.display     = "block";
+  document.getElementById("mm-board").style.display      = "none";
+  document.getElementById("mm-rows").innerHTML           = "";
+  document.getElementById("mm-status-bar").textContent   = "";
+  document.getElementById("guesses-left").textContent    = `${gameState.max} guesses remaining`;
+  renderSlots();
+}
+
+async function submitGuess() {
+  if (!gameState || gameState.status !== "playing") return;
+  gameState = await post("/mastermind/guess", { guess: slots });
+  slots = [0,0,0,0];
+  renderSlots();
+  renderBoard(gameState);
+}
+
+async function resetGame() {
+  gameState = null;
+  document.getElementById("mm-start-wrap").style.display = "block";
+  document.getElementById("mm-game-wrap").style.display  = "none";
+  await post("/mastermind/reset");
+}
+</script>
+{% endblock %}

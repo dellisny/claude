@@ -13,6 +13,37 @@ from rich import box
 
 console = Console()
 
+
+def _resolve_to_ticker(user_input: str) -> tuple[str, bool]:
+    """Use Claude Haiku to resolve fuzzy input to a US stock ticker.
+
+    Returns (ticker_or_query, is_definite_ticker).
+    If Claude is confident, returns the ticker directly so we can skip yf.Search.
+    """
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=20,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"What is the US stock ticker symbol for: '{user_input}'?\n"
+                    "Reply with ONLY the ticker symbol (e.g. AAPL, SJM, TSLA). "
+                    "If you don't know, reply with the word UNKNOWN."
+                ),
+            }],
+        )
+        ticker = resp.content[0].text.strip().upper().strip('"').strip("'").split()[0]
+        if ticker and ticker != "UNKNOWN" and ticker.isalpha() and len(ticker) <= 5:
+            if ticker.upper() != user_input.upper():
+                console.print(f"[dim]Interpreting '{user_input}' as {ticker}...[/]")
+            return ticker, True
+    except Exception:
+        pass
+    return user_input, False
+
 PERIOD_MAP = {
     "1m": "1mo",
     "3m": "3mo",
@@ -33,8 +64,14 @@ INDEX_MAP = {
 
 def resolve_ticker(company_name: str) -> tuple[str, str]:
     """Search for a company and return (symbol, longName)."""
-    with console.status(f"[bold cyan]Searching for '{company_name}'...[/]"):
-        results = yf.Search(company_name, max_results=5).quotes
+    query, is_ticker = _resolve_to_ticker(company_name)
+
+    # If Claude gave us a confident ticker, skip search and use it directly
+    if is_ticker:
+        return query, query
+
+    with console.status(f"[bold cyan]Searching for '{query}'...[/]"):
+        results = yf.Search(query, max_results=5).quotes
 
     if not results:
         console.print(f"[red]No results found for '{company_name}'.[/]")

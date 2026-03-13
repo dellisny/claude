@@ -419,27 +419,68 @@ def _price_fcf(info, cashflow):
         return "N/A"
 
 
-def fetch_stock(query: str, period: str) -> dict:
+def _resolve_to_ticker(user_input: str) -> tuple[str, bool]:
+    """Use Claude Haiku to resolve fuzzy input to a US stock ticker.
+
+    Returns (ticker_or_original, is_definite_ticker).
+    """
     try:
-        results = yf.Search(query, max_results=5).quotes
+        client = _anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=20,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"What is the US stock ticker symbol for: '{user_input}'?\n"
+                    "Reply with ONLY the ticker symbol (e.g. AAPL, SJM, TSLA). "
+                    "If you don't know, reply with the word UNKNOWN."
+                ),
+            }],
+        )
+        ticker = resp.content[0].text.strip().upper().strip('"').strip("'").split()[0]
+        if ticker and ticker != "UNKNOWN" and ticker.isalpha() and len(ticker) <= 5:
+            return ticker, True
     except Exception:
-        return {"error": f"Search failed for '{query}'"}
-    if not results:
-        return {"error": f"No results found for '{query}'"}
+        pass
+    return user_input, False
 
-    equities = [r for r in results if r.get("quoteType") == "EQUITY"] or results
-    top = equities[0]
-    symbol = top.get("symbol", "")
 
-    try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        try:    cashflow = ticker.cashflow
-        except Exception: cashflow = None
-        try:    raw_news = ticker.news or []
-        except Exception: raw_news = []
-    except Exception as e:
-        return {"error": str(e)}
+def fetch_stock(query: str, period: str) -> dict:
+    resolved, is_ticker = _resolve_to_ticker(query)
+    interpreted_as = resolved if resolved.upper() != query.upper() else None
+    equities_tail = []
+
+    if is_ticker:
+        symbol = resolved
+        try:
+            t = yf.Ticker(symbol)
+            info = t.info
+            try:    cashflow = t.cashflow
+            except Exception: cashflow = None
+            try:    raw_news = t.news or []
+            except Exception: raw_news = []
+        except Exception as e:
+            return {"error": str(e)}
+    else:
+        try:
+            results = yf.Search(resolved, max_results=5).quotes
+        except Exception:
+            return {"error": f"Search failed for '{query}'"}
+        if not results:
+            return {"error": f"No results found for '{query}'"}
+        equities = [r for r in results if r.get("quoteType") == "EQUITY"] or results
+        symbol = equities[0].get("symbol", "")
+        equities_tail = equities[1:4]
+        try:
+            t = yf.Ticker(symbol)
+            info = t.info
+            try:    cashflow = t.cashflow
+            except Exception: cashflow = None
+            try:    raw_news = t.news or []
+            except Exception: raw_news = []
+        except Exception as e:
+            return {"error": str(e)}
 
     index_symbol, index_label = INDEX_MAP.get(info.get("exchange", ""), ("^GSPC", "S&P 500"))
     lo52, hi52 = info.get("fiftyTwoWeekLow"), info.get("fiftyTwoWeekHigh")
@@ -504,9 +545,10 @@ def fetch_stock(query: str, period: str) -> dict:
         ],
         "alternatives": [
             {"symbol": r.get("symbol", ""), "name": r.get("longname") or r.get("shortname", "")}
-            for r in equities[1:4]
+            for r in equities_tail
         ],
         "period": period,
+        "interpreted_as": interpreted_as,
     }
 
 
@@ -677,3 +719,237 @@ async def shade_delete_outing(outing_id: int):
 async def shade_clear_outings():
     shade_save([])
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Twenty Questions
+# ---------------------------------------------------------------------------
+
+import anthropic as _anthropic
+
+_TQ_MAX = 20
+_TQ_SYSTEM = """\
+You are playing 20 Questions. The human has secretly chosen something — it could be \
+an animal, vegetable, mineral, a specific person, a place, an abstract concept, or \
+anything else.
+
+Your goal is to identify it by asking strategic yes/no questions, then guess.
+
+Strategy:
+- Start broad to establish category (living/non-living, natural/man-made, etc.)
+- Use answers to binary-search down rapidly
+- Never repeat information already established
+- When confidence is high (roughly 85%+), stop asking and guess
+- You may guess before using all questions — do so as soon as you're confident
+
+Respond with ONLY a JSON object — no other text, no markdown fences.
+
+To ask a question:
+{"action": "ask", "question": "Is it a living thing?"}
+
+To make a guess:
+{"action": "guess", "guess": "a grand piano", "reasoning": "It's large, man-made, found indoors, makes music, and has black and white keys."}
+
+If you've used all your questions, always respond with a guess, never a question.\
+"""
+
+_tq_game: dict = {
+    "status": "idle",  # idle | asking | guessed | won | lost
+    "history": [],
+    "question": None,
+    "guess": None,
+    "reasoning": None,
+    "q_num": 0,
+    "reveal": "",
+}
+
+
+def _tq_reset():
+    _tq_game.update({
+        "status": "idle", "history": [], "question": None,
+        "guess": None, "reasoning": None, "q_num": 0, "reveal": "",
+    })
+
+
+def _tq_call_claude(history: list[dict], questions_left: int, attempt: int = 0) -> dict:
+    import re, time as _time
+    client = _anthropic.Anthropic()
+    if not history:
+        user_msg = f"I've thought of something. You have {_TQ_MAX} questions. Ask your first question."
+    else:
+        lines = [f"Q{i}: {h['question']} → {h['answer']}" for i, h in enumerate(history, 1)]
+        summary = "\n".join(lines)
+        if questions_left == 0:
+            user_msg = f"Here is everything we know:\n{summary}\n\nYou have no questions left. Make your best guess now."
+        else:
+            user_msg = f"Here is everything we know:\n{summary}\n\nYou have {questions_left} question(s) left. What is your next move?"
+
+    resp = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=300,
+        system=_TQ_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    text = resp.content[0].text.strip()
+
+    def parse(t):
+        try:
+            return json.loads(t)
+        except json.JSONDecodeError:
+            pass
+        stripped = re.sub(r"^```(?:json)?\s*", "", t)
+        stripped = re.sub(r"\s*```$", "", stripped).strip()
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+        m = re.search(r"\{.*?\}", t, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                pass
+        raise ValueError(f"No valid JSON: {t!r}")
+
+    try:
+        return parse(text)
+    except ValueError:
+        if attempt < 2:
+            _time.sleep(1)
+            return _tq_call_claude(history, questions_left, attempt + 1)
+        if questions_left == 0:
+            return {"action": "guess", "guess": "I'm not sure", "reasoning": ""}
+        return {"action": "ask", "question": "Is it something you can physically touch?"}
+
+
+def _tq_state():
+    return {k: _tq_game[k] for k in ("status", "history", "question", "guess", "reasoning", "q_num", "reveal")}
+
+
+@app.get("/twenty", response_class=HTMLResponse)
+async def twenty_page(request: Request):
+    return templates.TemplateResponse("twenty.html", {"request": request, "active": "twenty"})
+
+
+@app.post("/twenty/start")
+async def twenty_start():
+    _tq_reset()
+    _tq_game["status"] = "asking"
+    _tq_game["q_num"] = 1
+    move = _tq_call_claude([], _TQ_MAX)
+    _tq_game["question"] = move.get("question", "Is it a living thing?")
+    return _tq_state()
+
+
+@app.post("/twenty/answer")
+async def twenty_answer(request: Request):
+    body = await request.json()
+    answer = (body.get("answer") or "").strip()
+    if not answer or _tq_game["status"] != "asking":
+        return {"error": "invalid state"}
+    _tq_game["history"].append({"question": _tq_game["question"], "answer": answer})
+    questions_left = _TQ_MAX - _tq_game["q_num"]
+    if questions_left <= 0:
+        move = _tq_call_claude(_tq_game["history"], 0)
+        _tq_game["status"] = "guessed"
+        _tq_game["guess"] = move.get("guess", "I'm not sure")
+        _tq_game["reasoning"] = move.get("reasoning", "")
+    else:
+        move = _tq_call_claude(_tq_game["history"], questions_left)
+        if move.get("action") == "guess":
+            _tq_game["status"] = "guessed"
+            _tq_game["guess"] = move.get("guess", "I'm not sure")
+            _tq_game["reasoning"] = move.get("reasoning", "")
+        else:
+            _tq_game["q_num"] += 1
+            _tq_game["question"] = move.get("question", "Is it man-made?")
+    return _tq_state()
+
+
+@app.post("/twenty/confirm")
+async def twenty_confirm(request: Request):
+    body = await request.json()
+    correct = body.get("correct", False)
+    _tq_game["status"] = "won" if correct else "lost"
+    _tq_game["reveal"] = body.get("reveal", "")
+    return _tq_state()
+
+
+@app.post("/twenty/reset")
+async def twenty_reset():
+    _tq_reset()
+    return _tq_state()
+
+
+# ---------------------------------------------------------------------------
+# Mastermind
+# ---------------------------------------------------------------------------
+
+import random as _random
+
+_MM_PEGS   = 4
+_MM_COLORS = 6
+_MM_MAX    = 12
+
+
+def _mm_score(guess: tuple, secret: tuple) -> tuple:
+    black = sum(g == s for g, s in zip(guess, secret))
+    white = sum(min(guess.count(c), secret.count(c)) for c in range(1, _MM_COLORS + 1)) - black
+    return black, white
+
+
+_mm_game: dict = {
+    "status":  "idle",   # idle | playing | won | lost
+    "secret":  None,
+    "guesses": [],       # [{guess, black, white}]
+}
+
+
+def _mm_reset():
+    _mm_game.update({"status": "idle", "secret": None, "guesses": []})
+
+
+def _mm_state() -> dict:
+    return {
+        "status":  _mm_game["status"],
+        "guesses": _mm_game["guesses"],
+        "secret":  list(_mm_game["secret"]) if _mm_game["secret"] and _mm_game["status"] in ("won", "lost") else None,
+        "max":     _MM_MAX,
+    }
+
+
+@app.get("/mastermind", response_class=HTMLResponse)
+async def mastermind_page(request: Request):
+    return templates.TemplateResponse("mastermind.html", {"request": request, "active": "mastermind"})
+
+
+@app.post("/mastermind/start")
+async def mastermind_start():
+    _mm_reset()
+    _mm_game["secret"] = tuple(_random.randint(1, _MM_COLORS) for _ in range(_MM_PEGS))
+    _mm_game["status"] = "playing"
+    return _mm_state()
+
+
+@app.post("/mastermind/guess")
+async def mastermind_guess(request: Request):
+    body  = await request.json()
+    guess = body.get("guess", [])
+    if _mm_game["status"] != "playing":
+        return _mm_state()
+    if len(guess) != _MM_PEGS or not all(1 <= c <= _MM_COLORS for c in guess):
+        return {"error": "invalid guess"}
+    gt = tuple(guess)
+    black, white = _mm_score(gt, _mm_game["secret"])
+    _mm_game["guesses"].append({"guess": list(gt), "black": black, "white": white})
+    if black == _MM_PEGS:
+        _mm_game["status"] = "won"
+    elif len(_mm_game["guesses"]) >= _MM_MAX:
+        _mm_game["status"] = "lost"
+    return _mm_state()
+
+
+@app.post("/mastermind/reset")
+async def mastermind_reset():
+    _mm_reset()
+    return _mm_state()
