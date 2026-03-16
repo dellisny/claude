@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Dashboard{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -156,7 +157,8 @@
 <body>
 
 <nav>
-  <span class="brand">&#9646; DASHBOARD</span>
+  <a href="/" class="brand" style="text-decoration:none">&#9646; DASHBOARD</a>
+  <a href="/dashboard" class="{% if active == 'dashboard' %}active{% endif %}">Markets</a>
   <a href="/headlines" class="{% if active == 'headlines' %}active{% endif %}">Headlines</a>
   <a href="/bets"      class="{% if active == 'bets'      %}active{% endif %}">Bets</a>
   <a href="/stock"     class="{% if active == 'stock'     %}active{% endif %}">Stock</a>
@@ -167,6 +169,7 @@
   <a href="/twenty"      class="{% if active == 'twenty'      %}active{% endif %}">20Q</a>
   <a href="/mastermind" class="{% if active == 'mastermind' %}active{% endif %}">Mastermind</a>
   <a href="/ambulance" class="{% if active == 'ambulance'  %}active{% endif %}">Ambulance</a>
+  <a href="/hormuz"    class="{% if active == 'hormuz'     %}active{% endif %}">Hormuz</a>
 </nav>
 
 {% block toolbar %}{% endblock %}

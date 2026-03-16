@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Market Dashboard{% endblock %}
+
+{% block extra_styles %}
+<style>
+  :root {
+    --up:   #16a34a;
+    --down: #dc2626;
+    --flat: #6b7280;
+  }
+
+  /* ── Indices strip ─────────────────────────────────────────── */
+  .indices-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 1.2rem;
+  }
+  .idx-tile {
+    flex: 1 1 110px;
+    background: var(--bg2);
+    padding: 0.65rem 0.9rem;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    transition: background 0.1s;
+  }
+  .idx-tile:hover { background: var(--bg3); }
+  .idx-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--flat); }
+  .idx-price { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+  .idx-chg   { font-size: 11px; font-weight: 600; }
+  .idx-chg.up   { color: var(--up); }
+  .idx-chg.down { color: var(--down); }
+  .idx-chg.flat { color: var(--flat); }
+
+  /* ── Body two-col layout ───────────────────────────────────── */
+  .dash-body {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 1.2rem;
+    align-items: start;
+  }
+  @media (max-width: 820px) { .dash-body { grid-template-columns: 1fr; } }
+
+  /* ── Loading skeleton ──────────────────────────────────────── */
+  .loading {
+    color: var(--flat);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 1rem;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+  }
+  .loading::after {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    animation: dots 1.2s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0%   { content: ''; }
+    25%  { content: '.'; }
+    50%  { content: '..'; }
+    75%  { content: '...'; }
+  }
+
+  /* ── Movers ────────────────────────────────────────────────── */
+  .movers-wrap { background: var(--bg2); border: 1px solid var(--border); }
+  .movers-half { padding: 0.75rem 1rem; }
+  .movers-half + .movers-half { border-top: 1px solid var(--border); }
+  .movers-head { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.5rem; }
+  .movers-head.up   { color: var(--up); }
+  .movers-head.down { color: var(--down); }
+  .mover-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-top: 1px solid var(--border);
+    padding: 0.32rem 0;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 12px;
+  }
+  .mover-row:first-of-type { border-top: none; }
+  .mover-row:hover .mover-sym { color: var(--cyan); }
+  .mover-sym   { font-weight: 700; min-width: 70px; color: var(--text); }
+  .mover-price { color: var(--flat); flex: 1; text-align: right; padding-right: 1rem; }
+  .mover-chg   { font-weight: 600; min-width: 70px; text-align: right; }
+  .mover-chg.up   { color: var(--up); }
+  .mover-chg.down { color: var(--down); }
+
+  /* ── Headlines ─────────────────────────────────────────────── */
+  .headlines-wrap { background: var(--bg2); border: 1px solid var(--border); padding: 0.75rem 1rem; }
+  .hl-item { display: flex; align-items: baseline; gap: 0.6rem; border-top: 1px solid var(--border); padding: 0.45rem 0; }
+  .hl-item:first-child { border-top: none; }
+  .hl-src {
+    display: inline-block; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 1px 5px; border: 1px solid currentColor; white-space: nowrap; flex-shrink: 0; opacity: 0.8;
+  }
+  .hl-title { color: var(--text); text-decoration: none; font-size: 12px; line-height: 1.45; flex: 1; }
+  .hl-title:hover { color: var(--cyan); }
+  .hl-time { color: var(--flat); font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+
+  .as-of { color: var(--flat); font-size: 10px; letter-spacing: 0.06em; margin-bottom: 0.8rem; }
+
+  /* ── Watchlist ──────────────────────────────────────────────── */
+  .wl-search-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; max-width: 480px; }
+  .wl-search-row input[type=text] {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    font-family: inherit; font-size: 12px; padding: 5px 10px; outline: none;
+  }
+  .wl-search-row input[type=text]:focus { border-color: var(--yellow); }
+  .wl-search-row button {
+    background: transparent; border: 1px solid var(--yellow); color: var(--yellow);
+    font-family: inherit; font-size: 11px; padding: 5px 14px; cursor: pointer;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .wl-search-row button:hover { background: rgba(217,119,6,0.08); }
+  .wl-search-results { display: flex; flex-direction: column; max-width: 480px; margin-bottom: 1rem; border: 1px solid var(--border); background: var(--bg2); }
+  .wl-search-results:empty { display: none; }
+  .wl-result-row { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.45rem 0.9rem; border-top: 1px solid var(--border); }
+  .wl-result-row:first-child { border-top: none; }
+  .wl-result-sym  { font-weight: 700; font-size: 12px; min-width: 60px; color: var(--text); }
+  .wl-result-name { flex: 1; font-size: 11px; color: var(--flat); }
+  .wl-add-btn {
+    background: transparent; border: 1px solid var(--green); color: var(--green);
+    font-family: inherit; font-size: 10px; padding: 2px 10px; cursor: pointer;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .wl-add-btn:hover { background: rgba(22,163,74,0.08); }
+  .wl-cards { display: flex; flex-direction: column; gap: 1px; background: var(--border); border: 1px solid var(--border); }
+  .wl-card { background: var(--bg2); padding: 0.75rem 1rem; }
+  .wl-card-header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.5rem; }
+  .wl-sym   { font-size: 14px; font-weight: 700; color: var(--text); text-decoration: none; }
+  .wl-sym:hover { color: var(--cyan); }
+  .wl-name  { flex: 1; font-size: 11px; color: var(--flat); }
+  .wl-price { font-size: 14px; font-weight: 700; color: var(--text); }
+  .wl-chg   { font-size: 12px; font-weight: 600; }
+  .wl-chg.up   { color: var(--up); }
+  .wl-chg.down { color: var(--down); }
+  .wl-chg.flat { color: var(--flat); }
+  .wl-remove { background: transparent; border: none; color: var(--flat); font-family: inherit; font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1; }
+  .wl-remove:hover { color: var(--down); }
+  .wl-news { border-top: 1px solid var(--border); padding-top: 0.4rem; margin-top: 0.2rem; }
+  .wl-news-item { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.22rem 0; border-top: 1px solid var(--border); font-size: 11px; }
+  .wl-news-item:first-child { border-top: none; }
+  .wl-news-pub  { color: var(--flat); white-space: nowrap; min-width: 80px; }
+  .wl-news-link { color: var(--text); text-decoration: none; flex: 1; line-height: 1.4; }
+  .wl-news-link:hover { color: var(--cyan); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">MARKET OVERVIEW</div>
+<div class="as-of">as of {{ as_of }}</div>
+
+<!-- Indices: rendered immediately server-side -->
+<div class="indices-strip">
+  {% for idx in indices %}
+  <a class="idx-tile" href="/stock?q={{ idx.sym }}">
+    <span class="idx-label">{{ idx.label }}</span>
+    <span class="idx-price">{{ idx.price }}</span>
+    <span class="idx-chg {{ idx.trend }}">{{ idx.chg }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Movers + Headlines: loaded async -->
+<div class="dash-body">
+  <div id="movers-wrap" class="loading">Loading movers</div>
+  <div id="headlines-wrap" class="loading">Loading headlines</div>
+</div>
+
+<!-- Watchlist -->
+<div class="rule" style="margin-top:1.4rem">WATCHLIST</div>
+
+<form class="wl-search-row" method="get" action="/dashboard">
+  <input id="wl-input" type="text" name="wl_q" value="{{ wl_q }}"
+         placeholder="Search ticker or company name…" autocomplete="off">
+  <button type="submit">Search</button>
+</form>
+
+{% if search_results %}
+<div class="wl-search-results">
+  {% for r in search_results %}
+  <div class="wl-result-row">
+    <span class="wl-result-sym">{{ r.sym }}</span>
+    <span class="wl-result-name">{{ r.name }}</span>
+    <form method="post" action="/watchlist/add" style="margin:0">
+      <input type="hidden" name="sym"  value="{{ r.sym }}">
+      <input type="hidden" name="name" value="{{ r.name }}">
+      <button class="wl-add-btn" type="submit">+ Add</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% elif wl_q %}
+<div style="color:var(--flat);font-size:11px;margin-bottom:1rem">No results for "{{ wl_q }}".</div>
+{% endif %}
+
+<div id="watchlist-wrap" class="loading">Loading watchlist</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function moverRows(list) {
+  if (!list.length) return '<div style="color:var(--flat);font-size:11px;padding-top:.3rem">No data</div>';
+  return list.map(m =>
+    `<a class="mover-row" href="/stock?q=${m.sym}">
+      <span class="mover-sym">${m.sym}</span>
+      <span class="mover-price">${m.price}</span>
+      <span class="mover-chg ${m.trend}">${m.chg}</span>
+    </a>`
+  ).join('');
+}
+
+function loadMovers() {
+  fetch('/dashboard/movers').then(r => r.json()).then(d => {
+    document.getElementById('movers-wrap').className = 'movers-wrap';
+    document.getElementById('movers-wrap').innerHTML =
+      `<div class="movers-half">
+        <div class="movers-head up">▲ Top Gainers</div>
+        ${moverRows(d.gainers)}
+      </div>
+      <div class="movers-half">
+        <div class="movers-head down">▼ Top Losers</div>
+        ${moverRows(d.losers)}
+      </div>`;
+  }).catch(() => {
+    document.getElementById('movers-wrap').textContent = 'Failed to load movers.';
+  });
+}
+
+function loadHeadlines() {
+  fetch('/dashboard/headlines').then(r => r.json()).then(d => {
+    const el = document.getElementById('headlines-wrap');
+    el.className = 'headlines-wrap';
+    const header = '<div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--flat);margin-bottom:.5rem">Markets Headlines</div>';
+    const items = d.headlines.map(h =>
+      `<div class="hl-item">
+        <span class="hl-src" style="color:${h.color}">${h.label}</span>
+        <a class="hl-title" href="${h.url}" target="_blank" rel="noopener noreferrer">${h.title}</a>
+        ${h.rel_time ? `<span class="hl-time">${h.rel_time}</span>` : ''}
+      </div>`
+    ).join('') || '<div style="color:var(--flat);font-size:11px">No headlines available.</div>';
+    el.innerHTML = header + items;
+  }).catch(() => {
+    document.getElementById('headlines-wrap').textContent = 'Failed to load headlines.';
+  });
+}
+
+function loadWatchlist() {
+  fetch('/dashboard/watchlist').then(r => r.json()).then(d => {
+    const el = document.getElementById('watchlist-wrap');
+    el.className = '';
+    if (!d.watchlist.length) {
+      el.innerHTML = '<div style="color:var(--flat);font-size:11px">No stocks in watchlist. Search above to add one.</div>';
+      return;
+    }
+    const cards = d.watchlist.map(w => {
+      const newsHtml = w.news.length
+        ? `<div class="wl-news">${w.news.map(n =>
+            `<div class="wl-news-item">
+              <span class="wl-news-pub">${n.publisher}</span>
+              <a class="wl-news-link" href="${n.url}" target="_blank" rel="noopener noreferrer">${n.title}</a>
+            </div>`).join('')}</div>`
+        : '';
+      return `<div class="wl-card">
+        <div class="wl-card-header">
+          <a class="wl-sym" href="/stock?q=${w.sym}">${w.sym}</a>
+          <span class="wl-name">${w.name}</span>
+          <span class="wl-price">${w.price}</span>
+          <span class="wl-chg ${w.trend}">${w.chg}</span>
+          <form method="post" action="/watchlist/remove" style="margin:0">
+            <input type="hidden" name="sym" value="${w.sym}">
+            <button class="wl-remove" type="submit" title="Remove">×</button>
+          </form>
+        </div>${newsHtml}</div>`;
+    }).join('');
+    el.innerHTML = `<div class="wl-cards">${cards}</div>`;
+  }).catch(() => {
+    document.getElementById('watchlist-wrap').textContent = 'Failed to load watchlist.';
+  });
+}
+
+loadMovers();
+loadHeadlines();
+loadWatchlist();
+</script>
+{% endblock %}
+
+{% block footer %}Market data via Yahoo Finance · Headlines via RSS · Prices delayed{% endblock %}

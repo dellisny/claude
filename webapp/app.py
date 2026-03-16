@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """webapp — Web interface for headlines and bets programs."""
 
+import asyncio
 import json
 import os
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+try:
+    import websockets as _ws_lib
+    _HAS_WS = True
+except ImportError:
+    _HAS_WS = False
 
 import feedparser
 import requests
@@ -264,9 +272,39 @@ def fetch_predictit(keyword: Optional[str], limit: int) -> list[dict]:
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get("/", response_class=RedirectResponse)
-async def root():
-    return RedirectResponse(url="/headlines")
+@app.get("/favicon.svg")
+async def favicon():
+    from fastapi.responses import Response
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Bahamian sea background -->
+  <rect width="32" height="32" rx="5" fill="#0891b2"/>
+  <!-- Crossbones (behind skull) -->
+  <line x1="5" y1="29" x2="27" y2="19" stroke="white" stroke-width="3.2" stroke-linecap="round"/>
+  <line x1="5" y1="19" x2="27" y2="29" stroke="white" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="5"  cy="29" r="2.8" fill="white"/>
+  <circle cx="27" cy="29" r="2.8" fill="white"/>
+  <circle cx="5"  cy="19" r="2.8" fill="white"/>
+  <circle cx="27" cy="19" r="2.8" fill="white"/>
+  <!-- Skull cranium -->
+  <ellipse cx="16" cy="13" rx="7.5" ry="7" fill="white"/>
+  <!-- Jaw -->
+  <rect x="10.5" y="17.5" width="11" height="5" rx="1.5" fill="white"/>
+  <!-- Eyes -->
+  <circle cx="13" cy="12.5" r="2.2" fill="#0891b2"/>
+  <circle cx="19" cy="12.5" r="2.2" fill="#0891b2"/>
+  <!-- Nose -->
+  <rect x="15" y="15.5" width="2" height="1.8" rx="0.6" fill="#0891b2"/>
+  <!-- Teeth gaps -->
+  <rect x="11.5" y="19.5" width="1.8" height="3" rx="0.4" fill="#0891b2"/>
+  <rect x="15"   y="19.5" width="2"   height="3" rx="0.4" fill="#0891b2"/>
+  <rect x="18.7" y="19.5" width="1.8" height="3" rx="0.4" fill="#0891b2"/>
+</svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request, "active": ""})
 
 
 @app.get("/headlines", response_class=HTMLResponse)
@@ -562,6 +600,377 @@ async def stock_page(request: Request, q: Optional[str] = None, period: str = "1
         "period": period,
         "periods": ["1m", "3m", "6m", "1y", "2y", "5y"],
     })
+
+
+# ---------------------------------------------------------------------------
+# Market Dashboard
+# ---------------------------------------------------------------------------
+
+DASHBOARD_INDICES = [
+    {"sym": "^GSPC",   "label": "S&P 500"},
+    {"sym": "^DJI",    "label": "Dow"},
+    {"sym": "^IXIC",   "label": "Nasdaq"},
+    {"sym": "^RUT",    "label": "Russell 2K"},
+    {"sym": "^VIX",    "label": "VIX"},
+    {"sym": "GC=F",    "label": "Gold"},
+    {"sym": "CL=F",    "label": "WTI Oil"},
+    {"sym": "BTC-USD", "label": "Bitcoin"},
+]
+
+MOVERS_UNIVERSE = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B",
+    "JPM", "JNJ", "UNH", "V", "MA", "PG", "HD", "BAC", "XOM", "CVX",
+    "ABBV", "LLY", "PFE", "MRK", "KO", "PEP", "WMT", "COST", "DIS",
+    "NFLX", "AMD", "INTC", "CRM", "ORCL", "GS", "MS", "C", "WFC",
+    "GE", "CAT", "BA", "HON", "T", "VZ", "NEE", "PYPL", "UBER", "ABNB",
+    "COIN", "PLTR", "SHOP", "SNOW",
+]
+
+MARKET_HEADLINE_SOURCES = [
+    {"name": "MKTWTCH", "label": "MKTWTCH", "color": "#00e5ff", "url": "https://feeds.marketwatch.com/marketwatch/topstories/"},
+    {"name": "REUTERS", "label": "REUTERS", "color": "#ff5252", "url": "https://feeds.reuters.com/reuters/businessNews"},
+    {"name": "FT",      "label": "FT",      "color": "#ffd600", "url": "https://www.ft.com/?format=rss"},
+    {"name": "CNBC",    "label": "CNBC",    "color": "#0078d4", "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html"},
+    {"name": "ECONMST", "label": "ECONMST", "color": "#ff6e40", "url": "https://www.economist.com/finance-and-economics/rss.xml"},
+    {"name": "WSJ",     "label": "WSJ",     "color": "#e8e8e8", "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"},
+]
+
+
+def _fetch_quote(sym: str) -> dict:
+    try:
+        fi = yf.Ticker(sym).fast_info
+        price = getattr(fi, "last_price", None)
+        prev  = getattr(fi, "previous_close", None)
+        if price and prev and prev != 0:
+            return {"price": price, "chg_pct": (price - prev) / prev * 100, "chg_abs": price - prev}
+    except Exception:
+        pass
+    return {"price": None, "chg_pct": None, "chg_abs": None}
+
+
+def _fmt_idx_price(sym: str, price: float | None) -> str:
+    if price is None:
+        return "—"
+    if sym == "BTC-USD":
+        return f"${price:,.0f}"
+    if sym in ("GC=F", "CL=F"):
+        return f"${price:,.2f}"
+    return f"{price:,.2f}"
+
+
+def _fmt_chg(chg_pct: float | None, chg_abs: float | None, show_abs: bool = False) -> str:
+    if chg_pct is None:
+        return "—"
+    sign = "+" if chg_pct >= 0 else ""
+    if show_abs and chg_abs is not None:
+        abs_sign = "+" if chg_abs >= 0 else ""
+        return f"{abs_sign}{chg_abs:,.2f}  ({sign}{chg_pct:.2f}%)"
+    return f"{sign}{chg_pct:.2f}%"
+
+
+def _fetch_movers() -> dict:
+    try:
+        data = yf.download(
+            MOVERS_UNIVERSE, period="5d", interval="1d",
+            auto_adjust=True, progress=False,
+        )
+        close = data["Close"]
+        changes = []
+        for sym in MOVERS_UNIVERSE:
+            try:
+                if sym not in close.columns:
+                    continue
+                s = close[sym].dropna()
+                if len(s) < 2:
+                    continue
+                prev_v, curr_v = float(s.iloc[-2]), float(s.iloc[-1])
+                if prev_v == 0:
+                    continue
+                changes.append({"sym": sym, "price": curr_v, "chg": (curr_v - prev_v) / prev_v * 100})
+            except Exception:
+                pass
+        changes.sort(key=lambda x: x["chg"])
+        def _fmt(m):
+            sign = "+" if m["chg"] >= 0 else ""
+            return {
+                "sym": m["sym"],
+                "price": f"${m['price']:,.2f}",
+                "chg": f"{sign}{m['chg']:.2f}%",
+                "trend": "up" if m["chg"] >= 0 else "down",
+            }
+        return {
+            "losers":  [_fmt(m) for m in changes[:5]],
+            "gainers": [_fmt(m) for m in changes[-5:][::-1]],
+        }
+    except Exception:
+        return {"gainers": [], "losers": []}
+
+
+def _fetch_market_headlines() -> list[dict]:
+    all_stories: list[dict] = []
+    with ThreadPoolExecutor(max_workers=len(MARKET_HEADLINE_SOURCES)) as pool:
+        for future in as_completed(pool.submit(fetch_feed, s) for s in MARKET_HEADLINE_SOURCES):
+            all_stories.extend(future.result())
+    timestamped = sorted([s for s in all_stories if s["pub"]], key=lambda s: s["pub"], reverse=True)
+    no_time = [s for s in all_stories if not s["pub"]]
+    stories = dedup_headlines(timestamped + no_time, count=12, max_per_source=3)
+    for s in stories:
+        s["rel_time"] = relative_time(s["pub"])
+    return stories
+
+
+WATCHLIST_FILE = os.path.expanduser("~/.watchlist.json")
+
+
+def load_watchlist() -> list[dict]:
+    try:
+        with open(WATCHLIST_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_watchlist(items: list[dict]) -> None:
+    with open(WATCHLIST_FILE, "w") as f:
+        json.dump(items, f)
+
+
+def _fetch_watchlist_item(sym: str) -> dict:
+    try:
+        t = yf.Ticker(sym)
+        fi = t.fast_info
+        price = getattr(fi, "last_price", None)
+        prev  = getattr(fi, "previous_close", None)
+        chg_pct = chg_abs = None
+        if price and prev and prev != 0:
+            chg_pct = (price - prev) / prev * 100
+            chg_abs = price - prev
+        try:
+            raw_news = t.news or []
+        except Exception:
+            raw_news = []
+        news = []
+        for item in raw_news[:3]:
+            c = item.get("content") or {}
+            title = c.get("title") or item.get("title", "")
+            url   = (c.get("canonicalUrl") or {}).get("url") or item.get("link", "")
+            pub   = (c.get("provider") or {}).get("displayName") or item.get("publisher", "")
+            if title:
+                news.append({"title": title, "url": url, "publisher": pub})
+        trend = "flat" if chg_pct is None else ("up" if chg_pct >= 0 else "down")
+        return {
+            "price": _fmt_idx_price(sym, price),
+            "chg":   _fmt_chg(chg_pct, chg_abs),
+            "trend": trend,
+            "news":  news,
+        }
+    except Exception:
+        return {"price": "—", "chg": "—", "trend": "flat", "news": []}
+
+
+def _fetch_indices() -> list[dict]:
+    with ThreadPoolExecutor(max_workers=len(DASHBOARD_INDICES)) as pool:
+        futs = {item["sym"]: pool.submit(_fetch_quote, item["sym"]) for item in DASHBOARD_INDICES}
+    indices = []
+    for item in DASHBOARD_INDICES:
+        q = futs[item["sym"]].result()
+        trend = "flat" if q["chg_pct"] is None else ("up" if q["chg_pct"] >= 0 else "down")
+        indices.append({
+            "sym":   item["sym"],
+            "label": item["label"],
+            "price": _fmt_idx_price(item["sym"], q["price"]),
+            "chg":   _fmt_chg(q["chg_pct"], q["chg_abs"]),
+            "trend": trend,
+        })
+    return indices
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request, wl_q: Optional[str] = None):
+    indices = _fetch_indices()
+    search_results = []
+    if wl_q and wl_q.strip():
+        try:
+            results = yf.Search(wl_q.strip(), max_results=6).quotes
+            equities = [r for r in results if r.get("quoteType") == "EQUITY"] or results
+            search_results = [
+                {"sym": r.get("symbol", ""), "name": r.get("longname") or r.get("shortname", "")}
+                for r in equities[:5] if r.get("symbol")
+            ]
+        except Exception:
+            pass
+    return templates.TemplateResponse("dashboard.html", {
+        "request":        request,
+        "active":         "dashboard",
+        "wl_q":           wl_q or "",
+        "search_results": search_results,
+        "indices":        indices,
+        "as_of":          datetime.now(ET).strftime("%b %d %Y  %H:%M ET"),
+    })
+
+
+@app.get("/dashboard/movers")
+async def dashboard_movers():
+    return _fetch_movers()
+
+
+@app.get("/dashboard/headlines")
+async def dashboard_headlines():
+    return {"headlines": _fetch_market_headlines()}
+
+
+@app.get("/dashboard/watchlist")
+async def dashboard_watchlist_data():
+    watchlist = load_watchlist()
+    with ThreadPoolExecutor(max_workers=max(len(watchlist), 1)) as pool:
+        futs = {item["sym"]: pool.submit(_fetch_watchlist_item, item["sym"]) for item in watchlist}
+    result = []
+    for item in watchlist:
+        d = futs[item["sym"]].result()
+        result.append({"sym": item["sym"], "name": item["name"], **d})
+    return {"watchlist": result}
+
+
+@app.post("/watchlist/add")
+async def watchlist_add(sym: str = Form(...), name: str = Form(...)):
+    items = load_watchlist()
+    if not any(i["sym"] == sym for i in items):
+        items.append({"sym": sym.upper(), "name": name})
+        save_watchlist(items)
+    return RedirectResponse("/dashboard", status_code=303)
+
+
+@app.post("/watchlist/remove")
+async def watchlist_remove(sym: str = Form(...)):
+    save_watchlist([i for i in load_watchlist() if i["sym"] != sym])
+    return RedirectResponse("/dashboard", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Hormuz — Strait of Hormuz live ship tracker
+# ---------------------------------------------------------------------------
+
+_HORMUZ_BBOX = {"lat_min": 22.0, "lat_max": 28.0, "lon_min": 53.0, "lon_max": 62.0}
+_vessels: dict = {}       # mmsi → vessel dict
+_ais_connected: bool = False
+
+
+def _vtype_color(t):
+    if t is None:        return "#9ca3af"
+    if 80 <= t <= 89:    return "#ef4444"   # tanker
+    if 70 <= t <= 79:    return "#3b82f6"   # cargo
+    if 60 <= t <= 69:    return "#22c55e"   # passenger
+    if t == 30:          return "#eab308"   # fishing
+    if 50 <= t <= 59:    return "#a855f7"   # special
+    return "#9ca3af"
+
+
+def _vtype_label(t):
+    if t is None:        return "Unknown"
+    if 80 <= t <= 89:    return "Tanker"
+    if 70 <= t <= 79:    return "Cargo"
+    if 60 <= t <= 69:    return "Passenger"
+    if t == 30:          return "Fishing"
+    if 50 <= t <= 59:    return "Special"
+    return f"Type {t}"
+
+
+def _ingest(msg: dict):
+    mtype = msg.get("MessageType")
+    meta  = msg.get("MetaData", {})
+    mmsi  = str(meta.get("MMSI", "")).strip()
+    if not mmsi:
+        return
+    v   = _vessels.get(mmsi, {"mmsi": mmsi})
+    lat = meta.get("latitude")
+    lon = meta.get("longitude")
+    if lat is not None: v["lat"] = lat
+    if lon is not None: v["lon"] = lon
+    nm = (meta.get("ShipName") or "").strip()
+    if nm: v["name"] = nm
+    v["ts"] = time.time()
+    if mtype == "PositionReport":
+        b = (msg.get("Message") or {}).get("PositionReport", {})
+        if b.get("Sog") is not None:           v["sog"] = round(b["Sog"], 1)
+        if b.get("Cog") is not None:           v["cog"] = round(b["Cog"], 1)
+        hdg = b.get("TrueHeading")
+        if hdg is not None and hdg != 511:     v["hdg"] = hdg
+        if b.get("NavigationalStatus") is not None: v["nav"] = b["NavigationalStatus"]
+    elif mtype == "ShipStaticData":
+        b = (msg.get("Message") or {}).get("ShipStaticData", {})
+        sn = (b.get("Name") or "").strip()
+        if sn: v["name"] = sn
+        if b.get("Type") is not None: v["vtype"] = b["Type"]
+        dest = (b.get("Destination") or "").strip()
+        if dest: v["dest"] = dest
+    _vessels[mmsi] = v
+
+
+async def _aisstream_loop():
+    global _ais_connected
+    while True:
+        api_key = os.environ.get("AISSTREAM_KEY", "")
+        if not api_key or not _HAS_WS:
+            await asyncio.sleep(30)
+            continue
+        try:
+            async with _ws_lib.connect(
+                "wss://stream.aisstream.io/v0/stream", ping_interval=20, open_timeout=15
+            ) as ws:
+                _ais_connected = True
+                await ws.send(json.dumps({
+                    "APIKey": api_key,
+                    "BoundingBoxes": [[[_HORMUZ_BBOX["lat_min"], _HORMUZ_BBOX["lon_min"]],
+                                       [_HORMUZ_BBOX["lat_max"], _HORMUZ_BBOX["lon_max"]]]],
+                    "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
+                }))
+                async for raw in ws:
+                    try:
+                        _ingest(json.loads(raw))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        _ais_connected = False
+        await asyncio.sleep(15)
+
+
+@app.on_event("startup")
+async def _start_hormuz():
+    asyncio.create_task(_aisstream_loop())
+
+
+@app.get("/hormuz", response_class=HTMLResponse)
+async def hormuz_page(request: Request):
+    return templates.TemplateResponse("hormuz.html", {
+        "request":  request,
+        "active":   "hormuz",
+        "has_key":  bool(os.environ.get("AISSTREAM_KEY")),
+        "has_ws":   _HAS_WS,
+    })
+
+
+@app.get("/hormuz/vessels")
+async def hormuz_vessels():
+    cutoff = time.time() - 900  # 15-min staleness window
+    live = [
+        {
+            "mmsi":       v["mmsi"],
+            "name":       v.get("name", ""),
+            "lat":        v["lat"],
+            "lon":        v["lon"],
+            "sog":        v.get("sog"),
+            "cog":        v.get("cog"),
+            "hdg":        v.get("hdg"),
+            "nav":        v.get("nav"),
+            "dest":       v.get("dest", ""),
+            "color":      _vtype_color(v.get("vtype")),
+            "type_label": _vtype_label(v.get("vtype")),
+        }
+        for v in _vessels.values()
+        if v.get("ts", 0) > cutoff and v.get("lat") is not None
+    ]
+    return {"vessels": live, "connected": _ais_connected, "count": len(live)}
 
 
 # ---------------------------------------------------------------------------
@@ -1110,7 +1519,7 @@ def _overpass_query(lat: float, lon: float, radius_m: int, category: str) -> lis
                 "preferred_match": preferred,
                 "straight_km": straight_km,
             })
-        results.sort(key=lambda h: (0 if h["preferred_match"] else 1, h["straight_km"]))
+        results.sort(key=lambda h: h["straight_km"])
         return results
     except Exception:
         return []
@@ -1206,7 +1615,7 @@ async def ambulance_page(
             # Find nearest ERs by category
             hospitals = _find_nearby_hospitals(olat, olon, category)
             candidates = []
-            for h in hospitals[:6]:
+            for h in hospitals[:12]:
                 route = _osrm_route(olat, olon, h["lat"], h["lon"])
                 candidates.append({
                     "name": h["name"],
@@ -1218,12 +1627,14 @@ async def ambulance_page(
                     "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
                     "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
                 })
-            # Sort: preferred specialty match first, then by drive time
-            candidates.sort(key=lambda c: (0 if c["preferred_match"] else 1, c["duration_s"]))
+            # Sort by drive time only — in an emergency, proximity wins
+            candidates.sort(key=lambda c: c["duration_s"])
 
             closest = candidates[0] if candidates else None
             result = {
                 "origin": origin_geo["display_name"],
+                "origin_lat": olat,
+                "origin_lon": olon,
                 "closest": closest,
                 "preferred": preferred,
                 "others": candidates[1:5],

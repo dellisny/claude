@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .toc {
+    max-width: 640px;
+    margin-top: 1rem;
+  }
+  .toc-row {
+    display: flex;
+    align-items: baseline;
+    gap: 1.2rem;
+    border-top: 1px solid var(--border);
+    padding: 0.7rem 0;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .toc-row:last-child { border-bottom: 1px solid var(--border); }
+  .toc-row:hover .toc-name { color: var(--yellow); }
+  .toc-name {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    min-width: 130px;
+    color: var(--text);
+    transition: color 0.12s;
+  }
+  .toc-desc {
+    font-size: 12px;
+    color: var(--dim);
+    flex: 1;
+  }
+  .toc-arrow {
+    color: var(--border);
+    font-size: 12px;
+    transition: color 0.12s;
+  }
+  .toc-row:hover .toc-arrow { color: var(--yellow); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">APPS</div>
+<div class="toc">
+  <a class="toc-row" href="/dashboard">
+    <span class="toc-name">Markets</span>
+    <span class="toc-desc">Live indices, commodities, big movers, financial headlines, and watchlist</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/hormuz">
+    <span class="toc-name">Hormuz</span>
+    <span class="toc-desc">Live AIS ship tracking in the Strait of Hormuz</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/ambulance">
+    <span class="toc-name">Ambulance</span>
+    <span class="toc-desc">Find the nearest emergency room by drive time, with specialty filtering</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/headlines">
+    <span class="toc-name">Headlines</span>
+    <span class="toc-desc">Top stories aggregated from NYT, Reuters, FT, BBC, Guardian, and more</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/stock">
+    <span class="toc-name">Stock</span>
+    <span class="toc-desc">Detailed metrics, price chart, and news for any ticker or company name</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/bets">
+    <span class="toc-name">Bets</span>
+    <span class="toc-desc">Live prediction markets from Polymarket, Manifold, and PredictIt</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/hnt">
+    <span class="toc-name">HNT</span>
+    <span class="toc-desc">Helium network token price and stats</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/btree">
+    <span class="toc-name">BTree</span>
+    <span class="toc-desc">Interactive binary search tree visualiser</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/shade">
+    <span class="toc-name">SHaDE</span>
+    <span class="toc-desc">Sun and shade outing tracker</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/twenty">
+    <span class="toc-name">20Q</span>
+    <span class="toc-desc">Twenty questions — Claude tries to guess what you're thinking</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/mastermind">
+    <span class="toc-name">Mastermind</span>
+    <span class="toc-desc">Classic code-breaking game</span>
+    <span class="toc-arrow">→</span>
+  </a>
+  <a class="toc-row" href="/robotwar">
+    <span class="toc-name">RobotWar</span>
+    <span class="toc-desc">Robot combat simulator</span>
+    <span class="toc-arrow">→</span>
+  </a>
+</div>
+{% endblock %}
+
+{% block footer %}&#9646; Dashboard{% endblock %}

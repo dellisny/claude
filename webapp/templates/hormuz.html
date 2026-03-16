@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Strait of Hormuz{% endblock %}
+
+{% block extra_styles %}
+<style>
+  main { padding: 0; position: relative; overflow: hidden; }
+
+  #map {
+    width: 100%;
+    height: calc(100vh - 39px);
+  }
+
+  /* ── Status badge ──────────────────────────────────────── */
+  #status-bar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: rgba(17,24,39,0.88);
+    border: 1px solid #374151;
+    color: #e5e7eb;
+    font-family: "JetBrains Mono", "Fira Mono", monospace;
+    font-size: 11px;
+    padding: 5px 16px;
+    letter-spacing: 0.09em;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  #status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 7px;
+    vertical-align: middle;
+  }
+  #status-dot.live { background: #22c55e; box-shadow: 0 0 7px #22c55e88; }
+  #status-dot.dead { background: #6b7280; }
+
+  /* ── Legend ────────────────────────────────────────────── */
+  #legend {
+    position: absolute;
+    bottom: 28px;
+    right: 10px;
+    z-index: 1000;
+    background: rgba(17,24,39,0.88);
+    border: 1px solid #374151;
+    color: #e5e7eb;
+    font-family: "JetBrains Mono", "Fira Mono", monospace;
+    font-size: 10px;
+    padding: 8px 12px;
+    line-height: 1.7;
+  }
+  #legend .leg-hd {
+    color: #6b7280;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .leg-row { display: flex; align-items: center; gap: 7px; }
+  .leg-pip {
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* ── No-key overlay ────────────────────────────────────── */
+  #no-key {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    background: rgba(17,24,39,0.92);
+    border: 1px solid #dc2626;
+    color: #e5e7eb;
+    font-family: "JetBrains Mono", "Fira Mono", monospace;
+    font-size: 12px;
+    padding: 20px 28px;
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.7;
+  }
+  #no-key .nk-title { color: #dc2626; font-size: 13px; margin-bottom: 8px; letter-spacing: 0.05em; }
+  #no-key code { color: #fbbf24; }
+  #no-key .nk-sub { color: #6b7280; font-size: 10px; margin-top: 8px; }
+
+  /* ── Leaflet popup overrides ───────────────────────────── */
+  .leaflet-popup-content-wrapper {
+    background: rgba(17,24,39,0.95) !important;
+    border: 1px solid #374151 !important;
+    border-radius: 0 !important;
+    color: #e5e7eb !important;
+    font-family: "JetBrains Mono", "Fira Mono", monospace !important;
+    font-size: 11px !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5) !important;
+  }
+  .leaflet-popup-tip { background: #374151 !important; }
+  .leaflet-popup-close-button { color: #9ca3af !important; }
+  .popup-name  { font-size: 13px; font-weight: 700; color: #f9fafb; margin-bottom: 4px; }
+  .popup-mmsi  { color: #6b7280; font-size: 10px; margin-bottom: 6px; }
+  .popup-row   { display: flex; gap: 12px; margin-bottom: 2px; }
+  .popup-label { color: #6b7280; min-width: 52px; }
+  .popup-val   { color: #e5e7eb; }
+  .popup-type  { display: inline-block; padding: 1px 6px; border-radius: 2px; font-size: 10px; font-weight: 700; color: #111; margin-bottom: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div id="status-bar">
+  <span id="status-dot" class="dead"></span>
+  <span id="status-text">Initialising…</span>
+</div>
+
+{% if not has_key or not has_ws %}
+<div id="no-key">
+  <div class="nk-title">▲ LIVE TRACKING UNAVAILABLE</div>
+  {% if not has_ws %}
+  Install the <code>websockets</code> Python package:<br>
+  <code>pip install websockets</code>
+  {% endif %}
+  {% if not has_key %}
+  Set the <code>AISSTREAM_KEY</code> environment variable.<br>
+  <span class="nk-sub">Free API key at <b>aisstream.io</b> — map still works below.</span>
+  {% endif %}
+</div>
+{% endif %}
+
+<div id="map"></div>
+
+<div id="legend">
+  <div class="leg-hd">Vessel type</div>
+  <div class="leg-row"><div class="leg-pip" style="background:#ef4444"></div>Tanker</div>
+  <div class="leg-row"><div class="leg-pip" style="background:#3b82f6"></div>Cargo</div>
+  <div class="leg-row"><div class="leg-pip" style="background:#22c55e"></div>Passenger</div>
+  <div class="leg-row"><div class="leg-pip" style="background:#eab308"></div>Fishing</div>
+  <div class="leg-row"><div class="leg-pip" style="background:#a855f7"></div>Special</div>
+  <div class="leg-row"><div class="leg-pip" style="background:#9ca3af"></div>Unknown</div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const NAV_STATUS = {
+  0:'Underway (engine)', 1:'At anchor', 2:'Not under command',
+  3:'Restricted manoeuvring', 4:'Constrained by draught', 5:'Moored',
+  6:'Aground', 7:'Fishing', 8:'Underway (sail)', 15:'N/A'
+};
+
+// ── Map setup ────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [26.3, 56.5],
+  zoom: 8,
+  zoomControl: true,
+});
+
+// Stamen Toner-lite for a clean nautical feel; fallback to OSM
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+// ── Vessel icon (ship-shaped arrow, rotates with COG/HDG) ────
+function shipIcon(color, angle) {
+  const a = (angle != null) ? angle : 0;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="26" viewBox="-8 -13 16 26">
+    <polygon points="0,-12 7,12 0,7 -7,12"
+             fill="${color}" stroke="#0a0a0a" stroke-width="0.7" opacity="0.93"/>
+  </svg>`;
+  return L.divIcon({
+    html: `<div style="transform:rotate(${a}deg);transform-origin:8px 13px;width:16px;height:26px">${svg}</div>`,
+    iconSize: [16, 26],
+    iconAnchor: [8, 13],
+    className: '',
+  });
+}
+
+function popupHtml(v) {
+  const sog  = v.sog  != null ? v.sog  + ' kn'  : '—';
+  const cog  = v.cog  != null ? v.cog  + '°'    : '—';
+  const hdg  = v.hdg  != null ? v.hdg  + '°'    : '—';
+  const nav  = v.nav  != null ? (NAV_STATUS[v.nav] || `Status ${v.nav}`) : '—';
+  const dest = v.dest || '—';
+  return `
+    <div class="popup-name">${v.name || '(unnamed)'}</div>
+    <div class="popup-mmsi">MMSI ${v.mmsi}</div>
+    <span class="popup-type" style="background:${v.color}">${v.type_label}</span>
+    <div class="popup-row"><span class="popup-label">Speed</span><span class="popup-val">${sog}</span></div>
+    <div class="popup-row"><span class="popup-label">COG</span><span class="popup-val">${cog}</span></div>
+    <div class="popup-row"><span class="popup-label">Heading</span><span class="popup-val">${hdg}</span></div>
+    <div class="popup-row"><span class="popup-label">Status</span><span class="popup-val">${nav}</span></div>
+    <div class="popup-row"><span class="popup-label">Dest</span><span class="popup-val">${dest}</span></div>
+  `;
+}
+
+// ── Vessel marker cache ──────────────────────────────────────
+const markers = {};
+
+function refresh() {
+  fetch('/hormuz/vessels')
+    .then(r => r.json())
+    .then(data => {
+      // Status bar
+      const dot  = document.getElementById('status-dot');
+      const txt  = document.getElementById('status-text');
+      if (data.connected) {
+        dot.className = 'live';
+        txt.textContent = `LIVE  ·  ${data.count} vessel${data.count !== 1 ? 's' : ''} in region`;
+      } else {
+        dot.className = 'dead';
+        txt.textContent = data.count > 0
+          ? `OFFLINE  ·  ${data.count} cached`
+          : `OFFLINE  ·  no data`;
+      }
+
+      // Update / add markers
+      const seen = new Set();
+      data.vessels.forEach(v => {
+        seen.add(v.mmsi);
+        const angle = v.hdg ?? v.cog ?? null;
+        const icon  = shipIcon(v.color, angle);
+        const popup = popupHtml(v);
+        if (markers[v.mmsi]) {
+          markers[v.mmsi]
+            .setLatLng([v.lat, v.lon])
+            .setIcon(icon)
+            .setPopupContent(popup);
+        } else {
+          markers[v.mmsi] = L.marker([v.lat, v.lon], { icon })
+            .bindPopup(popup, { maxWidth: 220 })
+            .addTo(map);
+        }
+      });
+
+      // Remove stale markers
+      for (const mmsi of Object.keys(markers)) {
+        if (!seen.has(mmsi)) {
+          map.removeLayer(markers[mmsi]);
+          delete markers[mmsi];
+        }
+      }
+    })
+    .catch(() => {
+      document.getElementById('status-dot').className = 'dead';
+      document.getElementById('status-text').textContent = 'Error — retrying…';
+    });
+}
+
+refresh();
+setInterval(refresh, 30000);   // poll every 30 s
+</script>
+{% endblock %}
