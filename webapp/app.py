@@ -1371,23 +1371,25 @@ async def mastermind_reset():
 import math as _math
 
 
-def _nominatim_query(q: str) -> Optional[dict]:
-    """Single Nominatim query. Returns first result or None."""
+def _nominatim_query(q: str, limit: int = 1, viewbox: Optional[str] = None, bounded: int = 0) -> list[dict]:
+    """Nominatim query. Returns list of up to `limit` results."""
+    params: dict = {"q": q, "format": "json", "limit": limit, "countrycodes": "us,ca,gb,au"}
+    if viewbox:
+        params["viewbox"] = viewbox
+        params["bounded"] = str(bounded)
     try:
         resp = requests.get(
             "https://nominatim.openstreetmap.org/search",
-            params={"q": q, "format": "json", "limit": 1, "countrycodes": "us,ca,gb,au"},
+            params=params,
             headers={"User-Agent": "AmbulanceTool/1.0 (personal)"},
             timeout=8,
         )
         resp.raise_for_status()
-        results = resp.json()
-        if results:
-            r = results[0]
-            return {"lat": float(r["lat"]), "lon": float(r["lon"]), "display_name": r["display_name"]}
+        data = resp.json()
+        return [{"lat": float(r["lat"]), "lon": float(r["lon"]), "display_name": r["display_name"],
+                 "class": r.get("class", ""), "type": r.get("type", "")} for r in data]
     except Exception:
-        pass
-    return None
+        return []
 
 
 def _geocode(address: str) -> Optional[dict]:
@@ -1402,14 +1404,96 @@ def _geocode(address: str) -> Optional[dict]:
         queries.append(normalized)
         queries.append(_re.sub(r"\s+and\s+", " at ", address, flags=_re.IGNORECASE))
 
-    # If no comma (no city context), also try without the "at/and" phrasing
-    # by querying each street individually — not useful, skip that.
-
     for q in queries:
-        result = _nominatim_query(q)
-        if result:
-            return result
+        results = _nominatim_query(q)
+        if results:
+            return results[0]
     return None
+
+
+def _reverse_geocode_city(lat: float, lon: float) -> Optional[str]:
+    """Returns 'City, State' string for the given coordinates, or None."""
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={"lat": lat, "lon": lon, "format": "json"},
+            headers={"User-Agent": "AmbulanceTool/1.0 (personal)"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        addr = resp.json().get("address", {})
+        city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("county", "")
+        state = addr.get("state", "")
+        if city and state:
+            return f"{city}, {state}"
+        return state or city or None
+    except Exception:
+        return None
+
+
+def _normalize_hospital_name(name: str) -> str:
+    """Collapse triple+ repeated chars and strip extra whitespace to fix common typos."""
+    import re as _re
+    return _re.sub(r'(.)\1{2,}', r'\1\1', name).strip()
+
+
+def _geocode_hospital(name: str, olat: float, olon: float) -> tuple[Optional[dict], Optional[str]]:
+    """
+    Geocode a hospital name biased toward the origin location.
+    Returns (result, error_message). result is None if no local match was found.
+    """
+    # Normalize typos like "Bellvuue" → "Bellvue" before querying
+    name = _normalize_hospital_name(name)
+
+    MAX_KM = 80  # ~50 miles — farther than this is almost certainly the wrong place
+
+    def dist_km(r: dict) -> float:
+        return _math.sqrt((r["lat"] - olat) ** 2 + (r["lon"] - olon) ** 2) * 111
+
+    # 1. Viewbox-biased search (~0.75° ≈ 50 miles) around the origin, unbound so
+    #    Nominatim still returns results outside if nothing is inside.
+    delta = 0.75
+    viewbox = f"{olon - delta},{olat + delta},{olon + delta},{olat - delta}"
+    _HEALTHCARE_TYPES = {"hospital", "clinic", "doctors", "healthcare", "pharmacy"}
+
+    def is_healthcare(r: dict) -> bool:
+        return r.get("class") in ("amenity", "healthcare") and r.get("type") in _HEALTHCARE_TYPES
+
+    candidates = _nominatim_query(name, limit=5, viewbox=viewbox, bounded=0)
+    local = [r for r in candidates if dist_km(r) <= MAX_KM]
+    if local:
+        # Prefer results that are actually healthcare facilities
+        healthcare_local = [r for r in local if is_healthcare(r)]
+        return min(healthcare_local or local, key=dist_km), None
+
+    # 2. Append city/state from reverse-geocode of origin and try again.
+    city_state = _reverse_geocode_city(olat, olon)
+    results2: list[dict] = []
+    if city_state:
+        results2 = _nominatim_query(f"{name}, {city_state}", limit=3, viewbox=viewbox, bounded=0)
+        local2 = [r for r in results2 if dist_km(r) <= MAX_KM]
+        if local2:
+            healthcare_local2 = [r for r in local2 if is_healthcare(r)]
+            return min(healthcare_local2 or local2, key=dist_km), None
+
+    # 3. Nothing local found. Explain what was found (if anything) so the user can fix it.
+    all_candidates = candidates or results2
+    if all_candidates:
+        far = min(all_candidates, key=dist_km)
+        parts = [p.strip() for p in far["display_name"].split(",")]
+        location_hint = ", ".join(parts[-3:-1]) if len(parts) >= 3 else far["display_name"]
+        short_name = parts[0]
+        suggestion = f' Try adding a city, e.g. "{name}, {city_state}".' if city_state else ""
+        return None, (
+            f'Found \"{short_name}\" in {location_hint}, but that\'s '
+            f"{dist_km(far):.0f} km from your location — probably not what you meant.{suggestion}"
+        )
+
+    return None, (
+        f'Could not find \"{name}\" near your location.'
+        + (f' Try a more specific name, e.g. "{name}, {city_state}".' if city_state else
+           " Try adding a city or state to the name.")
+    )
 
 
 # Keywords that indicate a non-general hospital (used to filter for "other/trauma/cardiac")
@@ -1525,6 +1609,47 @@ def _overpass_query(lat: float, lon: float, radius_m: int, category: str) -> lis
         return []
 
 
+def _preferred_relevance_warning(hosp_name: str, category: str) -> Optional[str]:
+    """
+    Returns a warning string if the preferred hospital's name suggests it's not
+    appropriate for the selected emergency category, or None if it looks fine.
+    """
+    if category == "other":
+        return None
+
+    low = hosp_name.lower()
+    exclude_kw = _CATEGORY_EXCLUDE.get(category, set())
+    matched = [kw for kw in exclude_kw if kw in low]
+    if not matched:
+        return None
+
+    category_label = _CATEGORY_LABELS.get(category, category)
+
+    if any(kw in low for kw in {"psychiatric", "psychiatry", "mental", "behavioral", "behavioural"}):
+        facility_type = "psychiatric"
+    elif any(kw in low for kw in {"children", "child", "pediatric", "paediatric", "kids"}):
+        facility_type = "pediatric"
+    elif any(kw in low for kw in {"heart", "cardiac", "cardio", "cardiovascular"}):
+        facility_type = "cardiac"
+    elif any(kw in low for kw in {"cancer", "oncology"}):
+        facility_type = "oncology"
+    elif any(kw in low for kw in {"orthopaedic", "orthopedic"}):
+        facility_type = "orthopedic"
+    elif any(kw in low for kw in {"rehabilitation", "rehab"}):
+        facility_type = "rehabilitation"
+    elif any(kw in low for kw in {"maternity", "obstetric"}):
+        facility_type = "maternity"
+    elif any(kw in low for kw in {"eye", "ear", "dental", "dentist"}):
+        facility_type = "specialty"
+    else:
+        facility_type = "specialty"
+
+    return (
+        f"Warning: This appears to be a {facility_type} facility and may not handle "
+        f"{category_label.lower()} emergencies. Confirm it accepts this type before diverting."
+    )
+
+
 def _find_nearby_hospitals(lat: float, lon: float, category: str = "other") -> list[dict]:
     for radius_m in (20_000, 40_000, 80_000):
         results = _overpass_query(lat, lon, radius_m, category)
@@ -1598,19 +1723,21 @@ async def ambulance_page(
             # Preferred hospital routing
             preferred = None
             if hospital:
-                hosp_geo = _geocode(hospital)
+                hosp_geo, hosp_err = _geocode_hospital(hospital, olat, olon)
                 if hosp_geo:
                     route = _osrm_route(olat, olon, hosp_geo["lat"], hosp_geo["lon"])
+                    hosp_name = hosp_geo["display_name"].split(",")[0].strip()
                     preferred = {
-                        "name": hospital,
+                        "name": hosp_name,
                         "display_name": hosp_geo["display_name"],
                         "lat": hosp_geo["lat"],
                         "lon": hosp_geo["lon"],
                         "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
                         "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
+                        "relevance_warning": _preferred_relevance_warning(hosp_name, category),
                     }
                 else:
-                    error = f"Could not locate preferred hospital: {hospital}"
+                    error = hosp_err
 
             # Find nearest ERs by category
             hospitals = _find_nearby_hospitals(olat, olon, category)

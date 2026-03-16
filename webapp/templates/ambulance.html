@@ -223,6 +223,17 @@
     vertical-align: middle;
   }
 
+  .relevance-warning {
+    background: #fff7ed;
+    border: 1px solid #ea580c;
+    color: #9a3412;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 0.4rem 0.7rem;
+    margin-top: 0.6rem;
+    margin-bottom: 0.2rem;
+  }
+
   .nearby-list {
     max-width: 680px;
     margin-top: 1rem;
@@ -338,6 +349,9 @@
     <div class="card-body">
       <div class="card-label">Preferred Hospital</div>
       <div class="card-name">{{ result.preferred.name }}</div>
+      {% if result.preferred.relevance_warning %}
+      <div class="relevance-warning">&#9888; {{ result.preferred.relevance_warning }}</div>
+      {% endif %}
       <div class="card-stats">
         <div>
           <div class="stat-val">{{ result.preferred.duration }}</div>
