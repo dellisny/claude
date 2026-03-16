@@ -10,10 +10,11 @@ if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --other
 fi
 
 echo ""
-echo "About to:"
-echo "  1. git add -A"
-echo "  2. git commit -m \"Daily sync $(date '+%Y-%m-%d')\""
-echo "  3. git push origin main"
+echo "Local changes:"
+git status --short | sed 's/^/  /'
+echo ""
+ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+echo "Remote: will push $((ahead + 1)) commit(s) to origin/main"
 echo ""
 read -r -p "Proceed? [y/N] " confirm
 if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
