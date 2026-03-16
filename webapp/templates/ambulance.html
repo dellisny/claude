@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}Ambulance — ER Finder{% endblock %}
+
+{% block extra_styles %}
+<style>
+  :root {
+    --er-red:    #dc2626;
+    --er-orange: #ea580c;
+    --er-dim:    #6b7280;
+  }
+
+  .amb-form {
+    background: var(--bg2);
+    border: 1px solid var(--er-red);
+    padding: 1.2rem 1.4rem;
+    max-width: 680px;
+    margin-bottom: 1.4rem;
+  }
+  .amb-form h2 {
+    color: var(--er-red);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+  .field { margin-bottom: 0.8rem; }
+  .field > label {
+    display: block;
+    color: var(--er-dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+  .field input[type=text] {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 10px;
+    outline: none;
+  }
+  .field input[type=text]:focus { border-color: var(--er-red); }
+
+  /* Severity radio buttons */
+  .severity-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.9rem;
+  }
+  .severity-group > label {
+    display: block;
+    color: var(--er-dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+    width: 100%;
+  }
+  .sev-btn {
+    position: relative;
+  }
+  .sev-btn input[type=radio] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .sev-btn label {
+    display: inline-block;
+    padding: 5px 14px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    color: var(--er-dim);
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+  }
+  .sev-btn input[type=radio]:checked + label {
+    border-color: var(--er-red);
+    color: var(--er-red);
+    background: rgba(220,38,38,0.06);
+  }
+  .sev-btn label:hover {
+    border-color: #999;
+    color: var(--text);
+  }
+
+  .amb-submit {
+    background: var(--er-red);
+    border: none;
+    color: #fff;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 7px 22px;
+    cursor: pointer;
+    margin-top: 0.4rem;
+  }
+  .amb-submit:hover { background: #b91c1c; }
+
+  .error-box {
+    background: #fee2e2;
+    border: 1px solid var(--er-red);
+    color: var(--er-red);
+    padding: 0.6rem 1rem;
+    font-size: 12px;
+    max-width: 680px;
+    margin-bottom: 1rem;
+  }
+
+  .origin-note {
+    color: var(--er-dim);
+    font-size: 11px;
+    margin-bottom: 1.2rem;
+    max-width: 680px;
+  }
+
+  .cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 680px;
+  }
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 1rem 1.2rem;
+  }
+  .card.primary   { border-color: var(--er-red); }
+  .card.preferred { border-color: var(--er-orange); }
+
+  .card-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+  .card.primary   .card-label { color: var(--er-red); }
+  .card.preferred .card-label { color: var(--er-orange); }
+  .card.nearby    .card-label { color: var(--er-dim); }
+
+  .card-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.6rem;
+  }
+  .card-stats {
+    display: flex;
+    gap: 2rem;
+    align-items: baseline;
+  }
+  .stat-val {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .card.primary   .stat-val { color: var(--er-red); }
+  .card.preferred .stat-val { color: var(--er-orange); }
+  .card.nearby    .stat-val { color: var(--text); }
+  .stat-lbl {
+    font-size: 10px;
+    color: var(--er-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+  .er-badge {
+    display: inline-block;
+    background: var(--er-red);
+    color: #fff;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  .nearby-list {
+    max-width: 680px;
+    margin-top: 1rem;
+  }
+  .nearby-list h3 {
+    color: var(--er-dim);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+  .nearby-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-top: 1px solid var(--border);
+    padding: 0.4rem 0;
+    font-size: 12px;
+  }
+  .nearby-row-name { flex: 1; color: var(--text); }
+  .nearby-row-time { color: var(--er-dim); min-width: 70px; text-align: right; }
+  .nearby-row-dist { color: var(--er-dim); min-width: 60px; text-align: right; margin-left: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="amb-form">
+  <h2>&#9675; Emergency Room Finder</h2>
+  <form method="get" action="/ambulance">
+
+    <div class="field">
+      <label>Current Location (address or intersection)</label>
+      <input type="text" name="origin" value="{{ origin }}" placeholder="e.g. Atlantic Ave and Flatbush Ave, Brooklyn NY" autocomplete="off" required>
+    </div>
+
+    <div class="field">
+      <label>Preferred Hospital (optional)</label>
+      <input type="text" name="hospital" value="{{ hospital }}" placeholder="e.g. Kings County Hospital" autocomplete="off">
+    </div>
+
+    <div class="severity-group">
+      <label>Emergency Type</label>
+
+      <div class="sev-btn">
+        <input type="radio" name="category" id="cat-other" value="other" {% if category == "other" %}checked{% endif %}>
+        <label for="cat-other">Other</label>
+      </div>
+
+      <div class="sev-btn">
+        <input type="radio" name="category" id="cat-trauma" value="trauma" {% if category == "trauma" %}checked{% endif %}>
+        <label for="cat-trauma">Trauma</label>
+      </div>
+
+      <div class="sev-btn">
+        <input type="radio" name="category" id="cat-cardiac" value="cardiac" {% if category == "cardiac" %}checked{% endif %}>
+        <label for="cat-cardiac">Cardiac</label>
+      </div>
+
+      <div class="sev-btn">
+        <input type="radio" name="category" id="cat-psych" value="psych" {% if category == "psych" %}checked{% endif %}>
+        <label for="cat-psych">Psych</label>
+      </div>
+
+      <div class="sev-btn">
+        <input type="radio" name="category" id="cat-pediatrics" value="pediatrics" {% if category == "pediatrics" %}checked{% endif %}>
+        <label for="cat-pediatrics">Pediatrics</label>
+      </div>
+    </div>
+
+    <button class="amb-submit" type="submit">&#8594; Find</button>
+  </form>
+</div>
+
+{% if error %}
+<div class="error-box">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+<p class="origin-note">From: {{ result.origin }}</p>
+
+<div class="cards">
+
+  {% if result.closest %}
+  <div class="card primary">
+    <div class="card-label">Closest — {{ result.category_label }}</div>
+    <div class="card-name">
+      {{ result.closest.name }}
+      {% if result.closest.has_er %}<span class="er-badge">ER</span>{% endif %}
+    </div>
+    <div class="card-stats">
+      <div>
+        <div class="stat-val">{{ result.closest.duration }}</div>
+        <div class="stat-lbl">Drive time</div>
+      </div>
+      <div>
+        <div class="stat-val" style="font-size:16px">{{ result.closest.distance }}</div>
+        <div class="stat-lbl">Distance</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if result.preferred %}
+  <div class="card preferred">
+    <div class="card-label">Preferred Hospital</div>
+    <div class="card-name">{{ result.preferred.name }}</div>
+    <div class="card-stats">
+      <div>
+        <div class="stat-val">{{ result.preferred.duration }}</div>
+        <div class="stat-lbl">Drive time</div>
+      </div>
+      <div>
+        <div class="stat-val" style="font-size:16px">{{ result.preferred.distance }}</div>
+        <div class="stat-lbl">Distance</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+{% if result.others %}
+<div class="nearby-list">
+  <h3>Other nearby options</h3>
+  {% for h in result.others %}
+  <div class="nearby-row">
+    <span class="nearby-row-name">
+      {{ h.name }}{% if h.has_er %}<span class="er-badge">ER</span>{% endif %}
+    </span>
+    <span class="nearby-row-time">{{ h.duration }}</span>
+    <span class="nearby-row-dist">{{ h.distance }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block footer %}Emergency Room Finder — powered by OpenStreetMap + OSRM{% endblock %}

@@ -953,3 +953,289 @@ async def mastermind_guess(request: Request):
 async def mastermind_reset():
     _mm_reset()
     return _mm_state()
+
+
+# ---------------------------------------------------------------------------
+# Ambulance
+# ---------------------------------------------------------------------------
+
+import math as _math
+
+
+def _nominatim_query(q: str) -> Optional[dict]:
+    """Single Nominatim query. Returns first result or None."""
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": q, "format": "json", "limit": 1, "countrycodes": "us,ca,gb,au"},
+            headers={"User-Agent": "AmbulanceTool/1.0 (personal)"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        if results:
+            r = results[0]
+            return {"lat": float(r["lat"]), "lon": float(r["lon"]), "display_name": r["display_name"]}
+    except Exception:
+        pass
+    return None
+
+
+def _geocode(address: str) -> Optional[dict]:
+    """Geocode an address via Nominatim, trying multiple query formats."""
+    import re as _re
+
+    queries = [address]
+
+    # "X and Y" → try "X & Y" and "X at Y"
+    normalized = _re.sub(r"\s+and\s+", " & ", address, flags=_re.IGNORECASE)
+    if normalized != address:
+        queries.append(normalized)
+        queries.append(_re.sub(r"\s+and\s+", " at ", address, flags=_re.IGNORECASE))
+
+    # If no comma (no city context), also try without the "at/and" phrasing
+    # by querying each street individually — not useful, skip that.
+
+    for q in queries:
+        result = _nominatim_query(q)
+        if result:
+            return result
+    return None
+
+
+# Keywords that indicate a non-general hospital (used to filter for "other/trauma/cardiac")
+_EXCLUDE_GENERAL = {
+    "eye", "ear", "dental", "dentist", "rehabilitation", "rehab",
+    "cancer", "oncology", "orthopaedic", "orthopedic", "maternity",
+    "obstetric", "hospice", "nursing", "long-term", "long term",
+    "skin", "dermatology", "cosmetic",
+}
+
+# Overpass queries per category: list of tag filter strings to union
+_CATEGORY_QUERIES = {
+    "other": [
+        '["amenity"="hospital"]["emergency"="yes"]',
+    ],
+    "trauma": [
+        '["amenity"="hospital"]["trauma"="yes"]',
+        '["amenity"="hospital"]["trauma"="level1"]',
+        '["amenity"="hospital"]["trauma"="level2"]',
+        '["amenity"="hospital"]["trauma"="level_1"]',
+        '["amenity"="hospital"]["trauma"="level_2"]',
+        '["amenity"="hospital"]["emergency"="yes"]',
+    ],
+    "cardiac": [
+        '["amenity"="hospital"]["healthcare:speciality"="cardiology"]',
+        '["amenity"="hospital"]["healthcare:speciality"="cardiac_surgery"]',
+        '["amenity"="hospital"]["emergency"="yes"]',
+    ],
+    "psych": [
+        '["amenity"="hospital"]["healthcare:speciality"="psychiatry"]',
+        '["amenity"="hospital"]["healthcare:speciality"="mental_health"]',
+        '["amenity"="hospital"]["psychiatric"="yes"]',
+        '["amenity"="hospital"]["emergency"="yes"]',
+    ],
+    "pediatrics": [
+        '["amenity"="hospital"]["healthcare:speciality"="paediatrics"]',
+        '["amenity"="hospital"]["healthcare:speciality"="pediatrics"]',
+        '["amenity"="hospital"]["emergency"="yes"]',
+    ],
+}
+
+# Name keywords that signal a match is preferred for each category
+_CATEGORY_PREFER = {
+    "trauma":     {"trauma", "level i", "level ii", "level 1", "level 2", "regional medical", "university"},
+    "cardiac":    {"heart", "cardiac", "cardio", "cardiovascular"},
+    "psych":      {"psychiatric", "psychiatry", "behavioral", "behavioural", "mental health"},
+    "pediatrics": {"children", "child", "pediatric", "paediatric", "kids"},
+    "other":      set(),
+}
+
+# Name keywords that disqualify a result for each category
+_CATEGORY_EXCLUDE = {
+    "trauma":     _EXCLUDE_GENERAL | {"psychiatric", "psychiatry", "mental"},
+    "cardiac":    _EXCLUDE_GENERAL | {"psychiatric", "psychiatry", "mental"},
+    "psych":      {"eye", "ear", "dental", "cancer", "orthopaedic", "orthopedic",
+                   "maternity", "hospice", "nursing", "skin", "dermatology", "cosmetic"},
+    "pediatrics": {"eye", "ear", "dental", "cancer", "hospice", "nursing",
+                   "skin", "dermatology", "cosmetic", "psychiatric", "psychiatry"},
+    "other":      _EXCLUDE_GENERAL | {"psychiatric", "psychiatry", "mental",
+                                       "pediatric", "paediatric", "children"},
+}
+
+
+def _overpass_query(lat: float, lon: float, radius_m: int, category: str) -> list[dict]:
+    filters = _CATEGORY_QUERIES.get(category, _CATEGORY_QUERIES["other"])
+    union_parts = []
+    for f in filters:
+        for elem_type in ("node", "way", "relation"):
+            union_parts.append(f'  {elem_type}{f}(around:{radius_m},{lat},{lon});')
+    query = f"[out:json][timeout:20];\n(\n" + "\n".join(union_parts) + "\n);\nout center 30;"
+    try:
+        resp = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": query},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        prefer_kw  = _CATEGORY_PREFER.get(category, set())
+        exclude_kw = _CATEGORY_EXCLUDE.get(category, set())
+        results = []
+        seen: set[str] = set()
+        for elem in data.get("elements", []):
+            tags = elem.get("tags", {})
+            name = tags.get("name") or tags.get("official_name")
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            low = name.lower()
+            if any(kw in low for kw in exclude_kw):
+                continue
+            if elem["type"] == "node":
+                elat, elon = elem.get("lat"), elem.get("lon")
+            else:
+                center = elem.get("center", {})
+                elat, elon = center.get("lat"), center.get("lon")
+            if elat is None or elon is None:
+                continue
+            dlat, dlon = elat - lat, elon - lon
+            straight_km = _math.sqrt(dlat ** 2 + dlon ** 2) * 111
+            preferred = any(kw in low for kw in prefer_kw)
+            results.append({
+                "name": name,
+                "lat": elat,
+                "lon": elon,
+                "has_er": tags.get("emergency") == "yes",
+                "preferred_match": preferred,
+                "straight_km": straight_km,
+            })
+        results.sort(key=lambda h: (0 if h["preferred_match"] else 1, h["straight_km"]))
+        return results
+    except Exception:
+        return []
+
+
+def _find_nearby_hospitals(lat: float, lon: float, category: str = "other") -> list[dict]:
+    for radius_m in (20_000, 40_000, 80_000):
+        results = _overpass_query(lat, lon, radius_m, category)
+        if len(results) >= 3 or (results and radius_m == 80_000):
+            return results[:15]
+    return []
+
+
+def _osrm_route(from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> Optional[dict]:
+    """Get driving route from OSRM. Returns {duration_s, distance_m} or None."""
+    try:
+        url = (
+            f"http://router.project-osrm.org/route/v1/driving/"
+            f"{from_lon},{from_lat};{to_lon},{to_lat}"
+        )
+        resp = requests.get(url, params={"overview": "false"}, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") == "Ok" and data.get("routes"):
+            route = data["routes"][0]
+            return {"duration_s": route["duration"], "distance_m": route["distance"]}
+    except Exception:
+        pass
+    return None
+
+
+def _fmt_duration(seconds: float) -> str:
+    mins = round(seconds / 60)
+    if mins < 1:
+        return "< 1 min"
+    if mins < 60:
+        return f"{mins} min"
+    return f"{mins // 60}h {mins % 60}m"
+
+
+def _fmt_miles(meters: float) -> str:
+    return f"{meters / 1609.34:.1f} mi"
+
+
+_VALID_CATEGORIES = {"other", "trauma", "cardiac", "psych", "pediatrics"}
+
+_CATEGORY_LABELS = {
+    "other":      "General ER",
+    "trauma":     "Trauma Center",
+    "cardiac":    "Cardiac ER",
+    "psych":      "Psychiatric Emergency",
+    "pediatrics": "Pediatric ER",
+}
+
+
+@app.get("/ambulance", response_class=HTMLResponse)
+async def ambulance_page(
+    request: Request,
+    origin: Optional[str] = None,
+    hospital: Optional[str] = None,
+    category: str = "other",
+):
+    if category not in _VALID_CATEGORIES:
+        category = "other"
+
+    result = None
+    error = None
+
+    if origin:
+        origin_geo = _geocode(origin)
+        if not origin_geo:
+            error = f"Could not locate: \"{origin}\" — try adding a city/state (e.g. \"Atlantic Ave and Flatbush Ave, Brooklyn NY\")"
+        else:
+            olat, olon = origin_geo["lat"], origin_geo["lon"]
+
+            # Preferred hospital routing
+            preferred = None
+            if hospital:
+                hosp_geo = _geocode(hospital)
+                if hosp_geo:
+                    route = _osrm_route(olat, olon, hosp_geo["lat"], hosp_geo["lon"])
+                    preferred = {
+                        "name": hospital,
+                        "display_name": hosp_geo["display_name"],
+                        "lat": hosp_geo["lat"],
+                        "lon": hosp_geo["lon"],
+                        "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
+                        "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
+                    }
+                else:
+                    error = f"Could not locate preferred hospital: {hospital}"
+
+            # Find nearest ERs by category
+            hospitals = _find_nearby_hospitals(olat, olon, category)
+            candidates = []
+            for h in hospitals[:6]:
+                route = _osrm_route(olat, olon, h["lat"], h["lon"])
+                candidates.append({
+                    "name": h["name"],
+                    "has_er": h["has_er"],
+                    "preferred_match": h["preferred_match"],
+                    "lat": h["lat"],
+                    "lon": h["lon"],
+                    "duration_s": route["duration_s"] if route else 999999,
+                    "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
+                    "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
+                })
+            # Sort: preferred specialty match first, then by drive time
+            candidates.sort(key=lambda c: (0 if c["preferred_match"] else 1, c["duration_s"]))
+
+            closest = candidates[0] if candidates else None
+            result = {
+                "origin": origin_geo["display_name"],
+                "closest": closest,
+                "preferred": preferred,
+                "others": candidates[1:5],
+                "category_label": _CATEGORY_LABELS[category],
+            }
+
+    return templates.TemplateResponse("ambulance.html", {
+        "request": request,
+        "active": "ambulance",
+        "origin": origin or "",
+        "hospital": hospital or "",
+        "category": category,
+        "result": result,
+        "error": error,
+    })

@@ -83,7 +83,6 @@
   }
   .dmg-fill {
     height: 100%;
-    transition: width 0.1s;
   }
   .dmg-pct {
     width: 38px;
@@ -168,15 +167,64 @@
     font-size: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.4rem;
   }
   .quickref code {
     color: var(--green);
     font-family: inherit;
   }
+  .ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0.2rem;
+  }
+  .ref-table td {
+    padding: 2px 8px 2px 0;
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  .ref-table td:first-child {
+    white-space: nowrap;
+    min-width: 220px;
+  }
+  .ref-table td:last-child {
+    color: var(--dim);
+    font-size: 10px;
+    padding-left: 1rem;
+  }
+  .ref-notes {
+    color: var(--dim);
+    font-size: 10px;
+    line-height: 1.7;
+  }
 
   /* ── Tick counter ───────────────────────────────────────── */
   .rw-tick { font-size: 11px; color: var(--dim); }
+
+  /* ── Debug code view ─────────────────────────────────────── */
+  .code-debug {
+    display: none;
+    width: 100%;
+    box-sizing: border-box;
+    background: #000;
+    color: var(--green);
+    font-family: "JetBrains Mono", "Fira Mono", "Consolas", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    padding: 6px 0;
+    overflow-y: auto;
+    white-space: pre;
+    cursor: default;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-debug .dl {
+    display: block;
+    padding: 0 8px;
+  }
+  .code-debug .dl.active {
+    background: rgba(255,214,0,0.18);
+    color: #ffd600;
+  }
 </style>
 {% endblock %}
 
@@ -190,14 +238,15 @@
     <canvas id="arena" width="480" height="480"></canvas>
 
     <div class="rw-controls">
-      <button id="btn-start">Start</button>
-      <button id="btn-stop" class="stop-btn" style="display:none">Stop</button>
+      <button id="btn-run">Run</button>
+      <button id="btn-pause" class="stop-btn" style="display:none">Pause</button>
+      <button id="btn-step">Step</button>
       <button id="btn-reset">Reset</button>
       <label>Speed:</label>
       <select id="speed-sel">
-        <option value="1">1×</option>
+        <option value="1" selected>1×</option>
         <option value="2">2×</option>
-        <option value="4" selected>4×</option>
+        <option value="4">4×</option>
         <option value="8">8×</option>
       </select>
       <span class="rw-tick">Tick: <span id="tick-counter">0</span></span>
@@ -215,19 +264,43 @@
     </div>
 
     <div class="quickref">
-      <h4>Syntax Quick-Reference</h4>
-      <code>! comment</code> &nbsp;|&nbsp;
-      <code>;LABEL</code> &nbsp;|&nbsp;
-      <code>value TO reg</code> &nbsp;|&nbsp;
-      <code>ADD / SUB / MUL / DIV value TO reg</code><br>
-      <code>IF v1 = v2 JUMP label</code> &nbsp; ops: <code>= &lt; &gt; #</code> (not-equal) &nbsp;|&nbsp;
-      <code>JUMP label</code> &nbsp;|&nbsp;
-      <code>CALL label</code> &nbsp;|&nbsp;
-      <code>RETURN</code><br>
-      <strong style="color:var(--text)">Numbers 1–20 in source/dest → storage register N (pre-set reg1=1…reg20=20).
-      0 or ≥21 → literal.</strong><br>
-      <strong style="color:var(--text)">Named registers:</strong>
-      <code>AIM SHOT RADAR DAMAGE SPEED HEADING X Y HEAT RANDOM METERS</code>
+      <h4>Instructions</h4>
+      <table class="ref-table">
+        <tr><td><code>value TO reg</code></td><td>Set a register to a value</td><td><code>90 TO AIM</code></td></tr>
+        <tr><td><code>ADD value TO reg</code></td><td>Add value to register</td><td><code>ADD 5 TO AIM</code></td></tr>
+        <tr><td><code>SUB value TO reg</code></td><td>Subtract value from register</td><td><code>SUB 1 TO SPEED</code></td></tr>
+        <tr><td><code>MUL value TO reg</code></td><td>Multiply register by value</td><td><code>MUL 2 TO 1</code></td></tr>
+        <tr><td><code>DIV value TO reg</code></td><td>Divide register by value</td><td><code>DIV 2 TO 1</code></td></tr>
+        <tr><td><code>JUMP label</code></td><td>Go to label unconditionally</td><td><code>JUMP LOOP</code></td></tr>
+        <tr><td><code>IF v1 op v2 JUMP label</code></td><td>Jump if condition is true &nbsp; ops: <code>= &lt; &gt; #</code></td><td><code>IF 1 = 0 JUMP MISS</code></td></tr>
+        <tr><td><code>CALL label</code></td><td>Call subroutine (saves return address)</td><td><code>CALL FIRE</code></td></tr>
+        <tr><td><code>RETURN</code></td><td>Return from subroutine</td><td></td></tr>
+        <tr><td><code>;LABEL</code></td><td>Define a jump target</td><td><code>;LOOP</code></td></tr>
+        <tr><td><code>! text</code></td><td>Comment — ignored by the interpreter</td><td><code>! fire when locked</code></td></tr>
+      </table>
+
+      <h4 style="margin-top:0.8rem">Registers</h4>
+      <table class="ref-table">
+        <tr><td><code>AIM</code></td><td>Turret angle in degrees (0–359). Wraps automatically.</td></tr>
+        <tr><td><code>SHOT</code></td><td>Set to fire a shell. Value = max range (1–1000). Fires once per tick if heat allows.</td></tr>
+        <tr><td><code>RADAR</code></td><td>Read-only. Returns distance to nearest enemy within ±5° of AIM, or 0 if none.</td></tr>
+        <tr><td><code>SPEED</code></td><td>Movement speed (0–5). Robot moves in HEADING direction each tick.</td></tr>
+        <tr><td><code>HEADING</code></td><td>Direction of movement in degrees (0–359).</td></tr>
+        <tr><td><code>DAMAGE</code></td><td>Read-only. Current damage (0–100). At 100 the robot is destroyed.</td></tr>
+        <tr><td><code>HEAT</code></td><td>Read-only. Firing heat (0–100). Each shot adds 20; decays 2/tick. Can't fire at 100.</td></tr>
+        <tr><td><code>X / Y</code></td><td>Read-only. Current position in the 1000×1000 arena.</td></tr>
+        <tr><td><code>RANDOM</code></td><td>Read-only. Returns a random number 0–359 each time it is read.</td></tr>
+        <tr><td><code>METERS</code></td><td>Total distance traveled. Write 0 to reset the odometer.</td></tr>
+        <tr><td><code>1 – 20</code></td><td>General-purpose storage registers. Pre-loaded with their own index (reg1=1 … reg20=20).</td></tr>
+      </table>
+
+      <h4 style="margin-top:0.8rem">Notes</h4>
+      <div class="ref-notes">
+        Numbers <strong>1–20</strong> as a source or destination refer to storage registers, not literals.
+        Use <strong>0</strong> or <strong>21+</strong> for literal values in that range.<br>
+        Robots start at the four corners. Wall collisions deal 2 damage and stop movement.<br>
+        Shell hits deal 5 damage. Shells expire at their set range or when they leave the arena.
+      </div>
     </div>
   </div>
 
@@ -243,7 +316,7 @@
 const ARENA   = 1000;
 const CANVAS  = 480;
 const SCALE   = CANVAS / ARENA;
-const INSTRS_PER_TICK = 8;
+const INSTRS_PER_TICK = 4;
 const SHELL_SPEED = 15;
 const SHELL_HIT_R = 12;
 const SHELL_DMG   = 5;
@@ -257,51 +330,142 @@ const STARTS = [[50,50],[950,50],[50,950],[950,950]];
 
 // ── Default programs ──────────────────────────────────────────────────────
 const DEFAULT_PROGRAMS = [
-`! Spinner
-;SPIN
-ADD 5 TO AIM
-300 TO SHOT
-JUMP SPIN`,
-
-`! Tracker - radar lock
+`! Dervish — sprays and drifts
 ;SCAN
-ADD 3 TO AIM
-RADAR TO 1
-IF 1 = 0 JUMP SCAN
-;LOCK
-RADAR TO 1
-IF 1 = 0 JUMP SCAN
-1 TO SHOT
-JUMP LOCK`,
-
-`! Random mover
-3 TO SPEED
-;RUN
+4 TO SPEED
+ADD 8 TO AIM
+280 TO SHOT
+IF Y < 200 JUMP GOSOUTH
+IF Y > 800 JUMP GONORTH
+IF X < 200 JUMP GOEAST
+IF X > 800 JUMP GOWEST
+IF METERS < 100 JUMP SCAN
+0 TO METERS
 RANDOM TO HEADING
-ADD 17 TO AIM
-400 TO SHOT
-JUMP RUN`,
+JUMP SCAN
+;GOSOUTH
+0 TO METERS
+135 TO HEADING
+JUMP SCAN
+;GONORTH
+0 TO METERS
+315 TO HEADING
+JUMP SCAN
+;GOEAST
+0 TO METERS
+45 TO HEADING
+JUMP SCAN
+;GOWEST
+0 TO METERS
+225 TO HEADING
+JUMP SCAN`,
 
-`! Sniper - stationary radar hunter
+`! Berserker — fast, aggressive, center-focused
+;SCAN
+5 TO SPEED
+ADD 5 TO AIM
+RADAR TO 2
+IF 2 = 0 JUMP WALL
+;LOCK
+RADAR TO 2
+IF 2 = 0 JUMP SCAN
+2 TO SHOT
+JUMP LOCK
+;WALL
+IF Y < 200 JUMP GOSOUTH
+IF Y > 800 JUMP GONORTH
+IF X < 200 JUMP GOEAST
+IF X > 800 JUMP GOWEST
+IF METERS < 60 JUMP SCAN
+0 TO METERS
+RANDOM TO HEADING
+JUMP SCAN
+;GOSOUTH
+0 TO METERS
+135 TO HEADING
+JUMP SCAN
+;GONORTH
+0 TO METERS
+315 TO HEADING
+JUMP SCAN
+;GOEAST
+0 TO METERS
+45 TO HEADING
+JUMP SCAN
+;GOWEST
+0 TO METERS
+225 TO HEADING
+JUMP SCAN`,
+
+`! Rusher — charges at enemies
+;SCAN
+4 TO SPEED
+ADD 4 TO AIM
+RADAR TO 15
+IF 15 = 0 JUMP WALL
+AIM TO HEADING
+99 TO SPEED
+;FIRE
+RADAR TO 15
+IF 15 = 0 JUMP SCAN
+15 TO SHOT
+ADD 1 TO AIM
+JUMP FIRE
+;WALL
+IF Y < 200 JUMP GOSOUTH
+IF Y > 800 JUMP GONORTH
+IF X < 200 JUMP GOEAST
+IF X > 800 JUMP GOWEST
+IF METERS < 80 JUMP SCAN
+0 TO METERS
+RANDOM TO HEADING
+JUMP SCAN
+;GOSOUTH
+0 TO METERS
+135 TO HEADING
+JUMP SCAN
+;GONORTH
+0 TO METERS
+315 TO HEADING
+JUMP SCAN
+;GOEAST
+0 TO METERS
+45 TO HEADING
+JUMP SCAN
+;GOWEST
+0 TO METERS
+225 TO HEADING
+JUMP SCAN`,
+
+`! Sniper
 0 TO SPEED
 ;HUNT
-ADD 1 TO AIM
-RADAR TO 1
-IF 1 = 0 JUMP HUNT
+ADD 3 TO AIM
+RADAR TO 2
+IF 2 = 0 JUMP HUNT
 ;FIRE
-RADAR TO 1
-IF 1 = 0 JUMP HUNT
-1 TO SHOT
-JUMP FIRE`
+RADAR TO 2
+IF 2 = 0 JUMP LOST
+2 TO SHOT
+ADD 1 TO AIM
+JUMP FIRE
+;LOST
+SUB 8 TO AIM
+RADAR TO 2
+IF 2 # 0 JUMP FIRE
+JUMP HUNT`
 ];
 
 // ── Parser / Compiler ─────────────────────────────────────────────────────
 function parseProgram(src) {
-  // Returns { instrs, labels, error }
+  // Returns { instrs, labels, instrToLine, error }
   const lines = src.split('\n');
   const instrs = [];
   const labels = {};
+  const instrToLine = []; // maps instruction index → source line index
   const errors = [];
+
+  const addInstr = (instr, li) => { instrs.push(instr); instrToLine.push(li); };
 
   for (let li = 0; li < lines.length; li++) {
     let raw = lines[li];
@@ -324,14 +488,13 @@ function parseProgram(src) {
 
     if (op === 'JUMP') {
       if (parts.length < 2) { errors.push(`Line ${li+1}: JUMP needs label`); continue; }
-      instrs.push({ op:'JUMP', label: parts[1] });
+      addInstr({ op:'JUMP', label: parts[1] }, li);
     } else if (op === 'CALL') {
       if (parts.length < 2) { errors.push(`Line ${li+1}: CALL needs label`); continue; }
-      instrs.push({ op:'CALL', label: parts[1] });
+      addInstr({ op:'CALL', label: parts[1] }, li);
     } else if (op === 'RETURN') {
-      instrs.push({ op:'RETURN' });
+      addInstr({ op:'RETURN' }, li);
     } else if (op === 'IF') {
-      // IF v1 CMP v2 JUMP label
       if (parts.length < 6 || parts[4] !== 'JUMP') {
         errors.push(`Line ${li+1}: IF syntax: IF v1 op v2 JUMP label`); continue;
       }
@@ -339,45 +502,41 @@ function parseProgram(src) {
       if (!['=','<','>','#'].includes(cmp)) {
         errors.push(`Line ${li+1}: unknown operator '${cmp}'`); continue;
       }
-      instrs.push({ op:'IF', v1:parts[1], cmp, v2:parts[3], label:parts[5] });
+      addInstr({ op:'IF', v1:parts[1], cmp, v2:parts[3], label:parts[5] }, li);
     } else if (['ADD','SUB','MUL','DIV'].includes(op)) {
-      // ADD value TO reg
       if (parts.length < 4 || parts[2] !== 'TO') {
         errors.push(`Line ${li+1}: ${op} syntax: ${op} value TO reg`); continue;
       }
-      instrs.push({ op, src: parts[1], dst: parts[3] });
+      addInstr({ op, src: parts[1], dst: parts[3] }, li);
     } else if (parts.length >= 3 && parts[1] === 'TO') {
-      // value TO register
-      instrs.push({ op:'SET', src: parts[0], dst: parts[2] });
+      addInstr({ op:'SET', src: parts[0], dst: parts[2] }, li);
     } else {
       errors.push(`Line ${li+1}: unknown instruction '${raw}'`);
     }
   }
 
-  if (errors.length) return { instrs:null, labels:null, error: errors.join('; ') };
-  return { instrs, labels, error: null };
+  if (errors.length) return { instrs:null, labels:null, instrToLine:null, error: errors.join('; ') };
+  return { instrs, labels, instrToLine, error: null };
 }
 
 // ── Robot state factory ───────────────────────────────────────────────────
-function makeRobot(idx, instrs, labels) {
+function makeRobot(idx, instrs, labels, instrToLine) {
   return {
     idx,
     alive: true,
     x: STARTS[idx][0],
     y: STARTS[idx][1],
-    // named registers
     aim: 0,
     speed: 0,
     heading: 0,
     damage: 0,
     heat: 0,
     meters: 0,
-    shotPending: 0,   // >0 means fire this tick with that range
-    // storage registers 1-20 (index 0 unused)
+    shotPending: 0,
     reg: Array.from({length:21}, (_,i) => i),
-    // program state
     instrs,
     labels,
+    instrToLine: instrToLine || [],
     pc: 0,
     callStack: [],
     tickDeath: null,
@@ -568,7 +727,7 @@ function compileAll() {
     } else {
       errEl.textContent = '';
       infoEl.textContent = `${parsed.instrs.length} instructions`;
-      results.push({ ok: true, instrs: parsed.instrs, labels: parsed.labels });
+      results.push({ ok: true, instrs: parsed.instrs, labels: parsed.labels, instrToLine: parsed.instrToLine });
     }
   }
   return results;
@@ -584,7 +743,7 @@ function initGame() {
   document.getElementById('tick-counter').textContent = '0';
 
   for (let i = 0; i < 4; i++) {
-    const r = makeRobot(i, compiled[i].ok ? compiled[i].instrs : [], compiled[i].ok ? compiled[i].labels : {});
+    const r = makeRobot(i, compiled[i].ok ? compiled[i].instrs : [], compiled[i].ok ? compiled[i].labels : {}, compiled[i].ok ? compiled[i].instrToLine : []);
     if (!compiled[i].ok) {
       r.alive = false;
       r.tickDeath = 0;
@@ -816,6 +975,48 @@ function renderCanvas() {
   }
 }
 
+// ── PC indicators ─────────────────────────────────────────────────────────
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showDebugViews() {
+  for (let i = 0; i < robots.length; i++) {
+    const r = robots[i];
+    const ta  = document.getElementById(`code-${i}`);
+    const dbg = document.getElementById(`debug-${i}`);
+    if (!ta || !dbg) continue;
+
+    const activeLine = (!r.alive || r.instrs.length === 0)
+      ? -1
+      : r.instrToLine[Math.min(r.pc, r.instrs.length - 1)] ?? -1;
+
+    const lines = ta.value.split('\n');
+    dbg.innerHTML = lines.map((line, li) =>
+      `<span class="dl${li === activeLine ? ' active' : ''}">${esc(line) || ' '}</span>`
+    ).join('');
+    const visH = ta.style.display === 'none' ? dbg.offsetHeight : ta.offsetHeight;
+    dbg.style.height = visH + 'px';
+
+    ta.style.display  = 'none';
+    dbg.style.display = 'block';
+
+    if (activeLine >= 0) {
+      const activeEl = dbg.querySelectorAll('.dl')[activeLine];
+      if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }
+}
+
+function hideDebugViews() {
+  for (let i = 0; i < 4; i++) {
+    const ta  = document.getElementById(`code-${i}`);
+    const dbg = document.getElementById(`debug-${i}`);
+    if (ta)  ta.style.display  = '';
+    if (dbg) dbg.style.display = 'none';
+  }
+}
+
 // ── Damage bars ───────────────────────────────────────────────────────────
 function updateDamageBars() {
   const container = document.getElementById('damage-bars');
@@ -851,30 +1052,43 @@ function loop(now) {
     lastTime = now;
     const steps = parseInt(document.getElementById('speed-sel').value, 10);
     for (let s = 0; s < steps && !gameOver; s++) gameTick();
-    if (gameOver) stopGame();
+    if (gameOver) pauseGame();
   }
   rafId = requestAnimationFrame(loop);
 }
 
+let started = false; // has initGame been called for this run
+
 function startGame() {
   if (running) return;
+  if (!started) { initGame(); started = true; }
+  hideDebugViews();
   running = true;
-  document.getElementById('btn-start').style.display = 'none';
-  document.getElementById('btn-stop').style.display = '';
+  document.getElementById('btn-run').style.display = 'none';
+  document.getElementById('btn-pause').style.display = '';
   lastTime = 0;
   rafId = requestAnimationFrame(loop);
 }
 
-function stopGame() {
+function pauseGame() {
   running = false;
-  document.getElementById('btn-start').style.display = '';
-  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('btn-run').style.display = '';
+  document.getElementById('btn-pause').style.display = 'none';
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  showDebugViews();
+}
+
+function stepGame() {
+  if (running) pauseGame();
+  if (!started) { initGame(); started = true; }
+  if (!gameOver) gameTick();
+  showDebugViews();
 }
 
 function resetGame() {
-  stopGame();
-  // restore default code to editors
+  pauseGame();
+  hideDebugViews();
+  started = false;
   for (let i = 0; i < 4; i++) {
     document.getElementById(`code-${i}`).value = DEFAULT_PROGRAMS[i];
     document.getElementById(`err-${i}`).textContent = '';
@@ -897,6 +1111,7 @@ function buildEditors() {
         <span class="editor-info" id="info-${i}"></span>
       </div>
       <textarea class="code-area" id="code-${i}" spellcheck="false" rows="12">${DEFAULT_PROGRAMS[i]}</textarea>
+      <div class="code-debug" id="debug-${i}"></div>
       <div class="error-line" id="err-${i}"></div>
     `;
     container.appendChild(div);
@@ -923,17 +1138,16 @@ function buildDamageBars() {
 }
 
 // ── Wire buttons ──────────────────────────────────────────────────────────
-document.getElementById('btn-start').addEventListener('click', () => {
-  initGame();
-  startGame();
-});
-document.getElementById('btn-stop').addEventListener('click', stopGame);
+document.getElementById('btn-run').addEventListener('click', startGame);
+document.getElementById('btn-pause').addEventListener('click', pauseGame);
+document.getElementById('btn-step').addEventListener('click', stepGame);
 document.getElementById('btn-reset').addEventListener('click', resetGame);
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 buildEditors();
 buildDamageBars();
 initGame();
+started = true;
 
 })();
 </script>
