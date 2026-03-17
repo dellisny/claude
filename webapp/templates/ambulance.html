@@ -44,6 +44,29 @@
   }
   .field input[type=text]:focus { border-color: var(--er-red); }
 
+  .loc-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .loc-row input[type=text] { flex: 1; }
+  .use-location-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--er-dim);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .use-location-btn:hover { border-color: var(--er-red); color: var(--er-red); }
+  .use-location-btn:disabled { opacity: 0.4; cursor: default; }
+
   /* Severity radio buttons */
   .severity-group {
     display: flex;
@@ -266,7 +289,10 @@
 
     <div class="field">
       <label>Current Location (address or intersection)</label>
-      <input type="text" name="origin" value="{{ origin }}" placeholder="e.g. Atlantic Ave and Flatbush Ave, Brooklyn NY" autocomplete="off" required>
+      <div class="loc-row">
+        <input type="text" name="origin" id="origin-input" value="{{ origin }}" placeholder="e.g. Atlantic Ave and Flatbush Ave, Brooklyn NY" autocomplete="off">
+        <button type="button" class="use-location-btn" id="use-location-btn" title="Use device GPS">&#9737; Use Current Location</button>
+      </div>
     </div>
 
     <div class="field">
@@ -393,3 +419,42 @@
 {% endblock %}
 
 {% block footer %}Emergency Room Finder — powered by OpenStreetMap + OSRM{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const btn = document.getElementById('use-location-btn');
+  const input = document.getElementById('origin-input');
+  if (!btn || !navigator.geolocation) {
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    btn.textContent = 'Locating…';
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        // Build URL preserving other form values, swapping in GPS coords
+        const form = btn.closest('form');
+        const params = new URLSearchParams();
+        params.set('lat', lat.toFixed(6));
+        params.set('lon', lon.toFixed(6));
+        const hospital = form.querySelector('[name=hospital]');
+        if (hospital && hospital.value) params.set('hospital', hospital.value);
+        const cat = form.querySelector('[name=category]:checked');
+        if (cat) params.set('category', cat.value);
+        window.location.href = '/ambulance?' + params.toString();
+      },
+      function () {
+        btn.disabled = false;
+        btn.textContent = '⊕ Use Current Location';
+        alert('Could not get your location. Please check browser permissions.');
+      },
+      { timeout: 10000 }
+    );
+  });
+})();
+</script>
+{% endblock %}

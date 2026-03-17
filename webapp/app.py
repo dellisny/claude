@@ -636,6 +636,16 @@ MARKET_HEADLINE_SOURCES = [
 ]
 
 
+def is_market_open() -> bool:
+    """Return True if the US stock market is currently open (Mon–Fri 9:30–16:00 ET)."""
+    now = datetime.now(ET)
+    if now.weekday() >= 5:  # Saturday or Sunday
+        return False
+    market_open  = now.replace(hour=9,  minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0,  second=0, microsecond=0)
+    return market_open <= now < market_close
+
+
 def _fetch_quote(sym: str) -> dict:
     try:
         fi = yf.Ticker(sym).fast_info
@@ -769,10 +779,18 @@ def _fetch_watchlist_item(sym: str) -> dict:
 
 
 def _fetch_indices() -> list[dict]:
-    with ThreadPoolExecutor(max_workers=len(DASHBOARD_INDICES)) as pool:
-        futs = {item["sym"]: pool.submit(_fetch_quote, item["sym"]) for item in DASHBOARD_INDICES}
+    items = list(DASHBOARD_INDICES)
+    if not is_market_open():
+        expanded = []
+        for item in items:
+            expanded.append(item)
+            if item["sym"] == "^GSPC":
+                expanded.append({"sym": "ES=F", "label": "S&P Futures"})
+        items = expanded
+    with ThreadPoolExecutor(max_workers=len(items)) as pool:
+        futs = {item["sym"]: pool.submit(_fetch_quote, item["sym"]) for item in items}
     indices = []
-    for item in DASHBOARD_INDICES:
+    for item in items:
         q = futs[item["sym"]].result()
         trend = "flat" if q["chg_pct"] is None else ("up" if q["chg_pct"] >= 0 else "down")
         indices.append({
@@ -1373,7 +1391,7 @@ import math as _math
 
 def _nominatim_query(q: str, limit: int = 1, viewbox: Optional[str] = None, bounded: int = 0) -> list[dict]:
     """Nominatim query. Returns list of up to `limit` results."""
-    params: dict = {"q": q, "format": "json", "limit": limit, "countrycodes": "us,ca,gb,au"}
+    params: dict = {"q": q, "format": "json", "limit": limit}
     if viewbox:
         params["viewbox"] = viewbox
         params["bounded"] = str(bounded)
@@ -1429,6 +1447,22 @@ def _reverse_geocode_city(lat: float, lon: float) -> Optional[str]:
         return state or city or None
     except Exception:
         return None
+
+
+def _reverse_geocode_full(lat: float, lon: float) -> Optional[dict]:
+    """Reverse geocode to a full dict with display_name, lat, lon."""
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={"lat": lat, "lon": lon, "format": "json"},
+            headers={"User-Agent": "AmbulanceTool/1.0 (personal)"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {"lat": lat, "lon": lon, "display_name": data.get("display_name", f"{lat:.5f}, {lon:.5f}")}
+    except Exception:
+        return {"lat": lat, "lon": lon, "display_name": f"{lat:.5f}, {lon:.5f}"}
 
 
 def _normalize_hospital_name(name: str) -> str:
@@ -1655,7 +1689,63 @@ def _find_nearby_hospitals(lat: float, lon: float, category: str = "other") -> l
         results = _overpass_query(lat, lon, radius_m, category)
         if len(results) >= 3 or (results and radius_m == 80_000):
             return results[:15]
+    # Last resort: any amenity=hospital regardless of tags
+    for radius_m in (40_000, 100_000):
+        results = _overpass_any_hospital(lat, lon, radius_m)
+        if results:
+            return results[:15]
     return []
+
+
+def _overpass_any_hospital(lat: float, lon: float, radius_m: int) -> list[dict]:
+    """Fallback: find any hospital-like facility within radius, no tag requirements."""
+    tag_filters = [
+        '["amenity"="hospital"]',
+        '["healthcare"="hospital"]',
+        '["amenity"="clinic"]["healthcare"]',
+    ]
+    union_parts = []
+    for f in tag_filters:
+        for elem_type in ("node", "way", "relation"):
+            union_parts.append(f'  {elem_type}{f}(around:{radius_m},{lat},{lon});')
+    query = "[out:json][timeout:20];\n(\n" + "\n".join(union_parts) + "\n);\nout center 30;"
+    try:
+        resp = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": query},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        seen: set[str] = set()
+        for elem in data.get("elements", []):
+            tags = elem.get("tags", {})
+            name = tags.get("name") or tags.get("official_name")
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            if elem["type"] == "node":
+                elat, elon = elem.get("lat"), elem.get("lon")
+            else:
+                center = elem.get("center", {})
+                elat, elon = center.get("lat"), center.get("lon")
+            if elat is None or elon is None:
+                continue
+            dlat, dlon = elat - lat, elon - lon
+            straight_km = _math.sqrt(dlat ** 2 + dlon ** 2) * 111
+            results.append({
+                "name": name,
+                "lat": elat,
+                "lon": elon,
+                "has_er": tags.get("emergency") == "yes",
+                "preferred_match": False,
+                "straight_km": straight_km,
+            })
+        results.sort(key=lambda h: h["straight_km"])
+        return results
+    except Exception:
+        return []
 
 
 def _osrm_route(from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> Optional[dict]:
@@ -1706,6 +1796,8 @@ async def ambulance_page(
     origin: Optional[str] = None,
     hospital: Optional[str] = None,
     category: str = "other",
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
 ):
     if category not in _VALID_CATEGORIES:
         category = "other"
@@ -1713,60 +1805,66 @@ async def ambulance_page(
     result = None
     error = None
 
-    if origin:
+    # Resolve origin: GPS coords take priority over text
+    origin_geo = None
+    if lat is not None and lon is not None:
+        origin_geo = _reverse_geocode_full(lat, lon)
+        origin = origin_geo["display_name"]
+    elif origin:
         origin_geo = _geocode(origin)
         if not origin_geo:
-            error = f"Could not locate: \"{origin}\" — try adding a city/state (e.g. \"Atlantic Ave and Flatbush Ave, Brooklyn NY\")"
-        else:
-            olat, olon = origin_geo["lat"], origin_geo["lon"]
+            error = f"Could not locate: \"{origin}\" — try being more specific (e.g. adding city or country)"
 
-            # Preferred hospital routing
-            preferred = None
-            if hospital:
-                hosp_geo, hosp_err = _geocode_hospital(hospital, olat, olon)
-                if hosp_geo:
-                    route = _osrm_route(olat, olon, hosp_geo["lat"], hosp_geo["lon"])
-                    hosp_name = hosp_geo["display_name"].split(",")[0].strip()
-                    preferred = {
-                        "name": hosp_name,
-                        "display_name": hosp_geo["display_name"],
-                        "lat": hosp_geo["lat"],
-                        "lon": hosp_geo["lon"],
-                        "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
-                        "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
-                        "relevance_warning": _preferred_relevance_warning(hosp_name, category),
-                    }
-                else:
-                    error = hosp_err
+    if origin_geo:
+        olat, olon = origin_geo["lat"], origin_geo["lon"]
 
-            # Find nearest ERs by category
-            hospitals = _find_nearby_hospitals(olat, olon, category)
-            candidates = []
-            for h in hospitals[:12]:
-                route = _osrm_route(olat, olon, h["lat"], h["lon"])
-                candidates.append({
-                    "name": h["name"],
-                    "has_er": h["has_er"],
-                    "preferred_match": h["preferred_match"],
-                    "lat": h["lat"],
-                    "lon": h["lon"],
-                    "duration_s": route["duration_s"] if route else 999999,
+        # Preferred hospital routing
+        preferred = None
+        if hospital:
+            hosp_geo, hosp_err = _geocode_hospital(hospital, olat, olon)
+            if hosp_geo:
+                route = _osrm_route(olat, olon, hosp_geo["lat"], hosp_geo["lon"])
+                hosp_name = hosp_geo["display_name"].split(",")[0].strip()
+                preferred = {
+                    "name": hosp_name,
+                    "display_name": hosp_geo["display_name"],
+                    "lat": hosp_geo["lat"],
+                    "lon": hosp_geo["lon"],
                     "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
                     "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
-                })
-            # Sort by drive time only — in an emergency, proximity wins
-            candidates.sort(key=lambda c: c["duration_s"])
+                    "relevance_warning": _preferred_relevance_warning(hosp_name, category),
+                }
+            else:
+                error = hosp_err
 
-            closest = candidates[0] if candidates else None
-            result = {
-                "origin": origin_geo["display_name"],
-                "origin_lat": olat,
-                "origin_lon": olon,
-                "closest": closest,
-                "preferred": preferred,
-                "others": candidates[1:5],
-                "category_label": _CATEGORY_LABELS[category],
-            }
+        # Find nearest ERs by category
+        hospitals = _find_nearby_hospitals(olat, olon, category)
+        candidates = []
+        for h in hospitals[:12]:
+            route = _osrm_route(olat, olon, h["lat"], h["lon"])
+            candidates.append({
+                "name": h["name"],
+                "has_er": h["has_er"],
+                "preferred_match": h["preferred_match"],
+                "lat": h["lat"],
+                "lon": h["lon"],
+                "duration_s": route["duration_s"] if route else 999999,
+                "duration": _fmt_duration(route["duration_s"]) if route else "N/A",
+                "distance": _fmt_miles(route["distance_m"]) if route else "N/A",
+            })
+        # Sort by drive time only — in an emergency, proximity wins
+        candidates.sort(key=lambda c: c["duration_s"])
+
+        closest = candidates[0] if candidates else None
+        result = {
+            "origin": origin_geo["display_name"],
+            "origin_lat": olat,
+            "origin_lon": olon,
+            "closest": closest,
+            "preferred": preferred,
+            "others": candidates[1:5],
+            "category_label": _CATEGORY_LABELS[category],
+        }
 
     return templates.TemplateResponse("ambulance.html", {
         "request": request,
