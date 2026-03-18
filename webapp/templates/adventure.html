@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+{% block title %}Adventure{% endblock %}
+
+{% block extra_styles %}
+<style>
+body { overflow: hidden; }
+main { padding: 0; height: calc(100vh - 38px); display: flex; flex-direction: column; }
+
+/* ── Header bar ───────────────────────────────────────────────────────────── */
+#adv-bar {
+  display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  height: 40px; flex-shrink: 0;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+#adv-bar .brand { color: var(--yellow); font-weight: 700; letter-spacing: .1em; font-size: 12px; }
+.adv-stats { display: flex; gap: 18px; flex: 1; }
+.adv-stat  { display: flex; flex-direction: column; line-height: 1.2; }
+.adv-stat-lbl { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; }
+.adv-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
+.adv-ctrl { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.adv-btn {
+  padding: 3px 12px; border: 1px solid var(--border); background: transparent;
+  color: var(--dim); font-family: inherit; font-size: 11px; letter-spacing: .07em;
+  text-transform: uppercase; cursor: pointer; transition: color .12s, border-color .12s;
+}
+.adv-btn:disabled { opacity: .3; cursor: not-allowed; }
+.adv-btn-start { border-color: var(--green); color: var(--green); }
+.adv-btn-start:not(:disabled):hover { background: rgba(22,163,74,.1); }
+.adv-btn-pause { border-color: var(--yellow); color: var(--yellow); }
+.adv-btn-pause:not(:disabled):hover { background: rgba(217,119,6,.1); }
+.adv-btn-stop  { border-color: var(--red); color: var(--red); }
+.adv-btn-stop:not(:disabled):hover  { background: rgba(220,38,38,.1); }
+.adv-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.adv-dot-idle    { background: var(--border); }
+.adv-dot-running { background: var(--green); animation: adv-pulse 1.4s infinite; }
+.adv-dot-paused  { background: var(--yellow); }
+@keyframes adv-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+#adv-status { font-size: 11px; color: var(--dim); }
+
+/* ── Main layout: three columns ───────────────────────────────────────────── */
+#adv-layout {
+  flex: 1; display: grid;
+  grid-template-columns: 2fr 1.2fr 220px;
+  overflow: hidden; min-height: 0;
+}
+
+/* ── Shared panel header ──────────────────────────────────────────────────── */
+.adv-panel-hdr {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 12px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em;
+}
+
+/* ── Left: Map panel ──────────────────────────────────────────────────────── */
+#adv-map-panel {
+  display: flex; flex-direction: column; overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+#adv-map-room {
+  color: var(--yellow); margin-left: 6px; font-weight: 700;
+  text-transform: none; letter-spacing: 0;
+}
+#adv-map-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+#adv-map-svg  { width: 100%; height: 100%; display: block; }
+#adv-map-hint {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: var(--dim); font-size: 11px; pointer-events: none;
+}
+
+/* D3 node/link styles */
+.link-line  { stroke: #ccc; stroke-width: 1px; fill: none; marker-end: url(#adv-arr); }
+.link-label { fill: #bbb; font-size: 8px; pointer-events: none; user-select: none;
+              text-anchor: middle; }
+.node-dot   { cursor: grab; }
+.node-dot:active { cursor: grabbing; }
+.node-visited .node-dot  { fill: #aaa; r: 5px; }
+.node-visited .node-name { fill: var(--dim); font-size: 9px; }
+.node-current .node-dot  { fill: var(--yellow); r: 7px;
+                            filter: drop-shadow(0 0 3px rgba(217,119,6,.6)); }
+.node-current .node-name { fill: var(--yellow); font-size: 9px; font-weight: 700; }
+.node-name {
+  text-anchor: middle; pointer-events: none; user-select: none;
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* ── Center: Log panel ────────────────────────────────────────────────────── */
+#adv-log-panel {
+  display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+}
+.adv-chk-lbl { display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 10px; color: var(--dim); }
+.adv-chk-lbl input { accent-color: var(--yellow); }
+#adv-log {
+  flex: 1; overflow-y: auto; padding: 10px 14px;
+  font-size: 12px; line-height: 1.7; color: var(--text);
+}
+.log-entry { white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
+.log-output  { color: var(--text); }
+.log-command { color: var(--yellow); font-weight: 700; }
+.log-command::before { content: "▶  "; }
+.log-thinking { color: var(--dim); font-style: italic; }
+.log-thinking::before { content: "⟳  "; }
+.log-event   { color: var(--dim); font-style: italic; }
+.log-gameover {
+  color: var(--yellow); border: 1px solid var(--yellow);
+  padding: 6px 10px; margin: 8px 0; text-align: center; letter-spacing: .1em;
+}
+.log-error { color: var(--red); }
+.log-sep { border: none; border-top: 1px solid var(--border); margin: 5px 0; }
+
+/* ── Right: Inventory + sidebar ───────────────────────────────────────────── */
+#adv-right {
+  display: flex; flex-direction: column; overflow: hidden;
+  border-left: 2px solid var(--border); background: var(--bg2);
+}
+
+/* ── Inventory box ────────────────────────────────────────────────────────── */
+#adv-inv-panel {
+  flex-shrink: 0; border-bottom: 2px solid var(--yellow);
+  background: var(--bg2);
+}
+#adv-inv-panel .adv-panel-hdr {
+  background: rgba(217,119,6,.08); color: var(--yellow);
+  border-bottom: 1px solid rgba(217,119,6,.2);
+  font-weight: 700; letter-spacing: .1em;
+}
+#inv-items {
+  padding: 10px 10px;
+  display: flex; flex-wrap: wrap; gap: 5px;
+  min-height: 52px; max-height: 130px; overflow-y: auto;
+}
+.inv-item {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 9px; font-size: 11px;
+  border: 1px solid var(--border); background: var(--bg3); color: var(--text);
+}
+.inv-item::before { content: "·"; color: var(--dim); }
+.inv-item.treasure { border-color: var(--yellow); color: var(--yellow); background: rgba(217,119,6,.08); }
+.inv-item.treasure::before { content: "★"; color: var(--yellow); }
+.inv-empty { color: var(--dim); font-size: 11px; padding: 12px 10px; display: block; text-align: center; letter-spacing: .05em; }
+
+/* ── Sidebar sections ─────────────────────────────────────────────────────── */
+#adv-sidebar { flex: 1; overflow-y: auto; }
+.adv-sec { border-bottom: 1px solid var(--border); padding: 7px 12px; }
+.adv-sec-hdr { font-size: 9px; color: var(--dim); text-transform: uppercase;
+               letter-spacing: .08em; margin-bottom: 4px; }
+.adv-sec-txt { font-size: 11px; color: var(--text); line-height: 1.5; }
+.adv-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.adv-chip { background: var(--bg3); border: 1px solid var(--border);
+            padding: 1px 7px; font-size: 10px; color: var(--dim); }
+.adv-chip.treasure { border-color: var(--yellow); color: var(--yellow); }
+.adv-dim { color: var(--dim); font-size: 11px; font-style: italic; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="adv-bar">
+  <span class="brand">CAVE</span>
+  <div class="adv-stats">
+    <div class="adv-stat">
+      <span class="adv-stat-lbl">Turn</span>
+      <span class="adv-stat-val" id="stat-turn">—</span>
+    </div>
+    <div class="adv-stat">
+      <span class="adv-stat-lbl">Score</span>
+      <span class="adv-stat-val" id="stat-score">—</span>
+    </div>
+    <div class="adv-stat">
+      <span class="adv-stat-lbl">Deposited</span>
+      <span class="adv-stat-val" id="stat-dep">0 / 14</span>
+    </div>
+    <div class="adv-stat">
+      <span class="adv-stat-lbl">Lamp</span>
+      <span class="adv-stat-val" id="stat-lamp">—</span>
+    </div>
+  </div>
+  <div class="adv-ctrl">
+    <span id="adv-dot" class="adv-dot adv-dot-idle"></span>
+    <span id="adv-status">Idle</span>
+    <button id="btn-start" class="adv-btn adv-btn-start">Start</button>
+    <button id="btn-pause" class="adv-btn adv-btn-pause" disabled>Pause</button>
+    <button id="btn-stop"  class="adv-btn adv-btn-stop"  disabled>Stop</button>
+  </div>
+</div>
+
+<div id="adv-layout">
+
+  <!-- LEFT: Map -->
+  <div id="adv-map-panel">
+    <div class="adv-panel-hdr">
+      Map <span id="adv-map-room"></span>
+    </div>
+    <div id="adv-map-wrap">
+      <svg id="adv-map-svg">
+        <defs>
+          <marker id="adv-arr" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+            <path d="M0,0 L0,5 L5,2.5 z" fill="#bbb"/>
+          </marker>
+        </defs>
+        <g id="adv-zoom">
+          <g id="adv-links"></g>
+          <g id="adv-nodes"></g>
+        </g>
+      </svg>
+      <div id="adv-map-hint">No map data yet</div>
+    </div>
+  </div>
+
+  <!-- CENTER: Game log -->
+  <section id="adv-log-panel">
+    <div class="adv-panel-hdr">
+      Game Log
+      <label class="adv-chk-lbl"><input type="checkbox" id="autoscroll" checked> auto-scroll</label>
+    </div>
+    <div id="adv-log"></div>
+  </section>
+
+  <!-- RIGHT: Inventory + sidebar -->
+  <div id="adv-right">
+    <div id="adv-inv-panel">
+      <div class="adv-panel-hdr">Inventory</div>
+      <div id="inv-items"><span class="inv-empty">Empty</span></div>
+    </div>
+    <div id="adv-sidebar">
+      <div class="adv-sec">
+        <div class="adv-sec-hdr">Treasures Deposited</div>
+        <div id="dep-wrap" class="adv-chips"><span class="adv-dim">None yet</span></div>
+      </div>
+      <div class="adv-sec">
+        <div class="adv-sec-hdr">Goal</div>
+        <div id="goal-txt" class="adv-sec-txt adv-dim">—</div>
+      </div>
+      <div class="adv-sec">
+        <div class="adv-sec-hdr">Strategy</div>
+        <div id="strat-txt" class="adv-sec-txt adv-dim">—</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+"use strict";
+
+const TREASURES = ["gold nugget","diamonds","jewelry","coins","chest","pirate",
+  "golden eggs","trident","ming vase","emerald","pearl",
+  "platinum pyramid","persian rug","rare spices","silver bars"];
+const isTreasure = n => TREASURES.some(t => n.toLowerCase().includes(t));
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const $ = id => document.getElementById(id);
+
+const logEl    = $("adv-log");
+const asc      = $("autoscroll");
+const btnStart = $("btn-start");
+const btnPause = $("btn-pause");
+const btnStop  = $("btn-stop");
+const dot      = $("adv-dot");
+const statusEl = $("adv-status");
+
+let isRunning = false, isPaused = false, isGameOver = false;
+
+// ── Log ────────────────────────────────────────────────────────────────────────
+function addLog(cls, text) {
+  if (!text) return;
+  const el = document.createElement("div");
+  el.className = `log-entry ${cls}`;
+  el.textContent = text;
+  logEl.appendChild(el);
+  if (asc.checked) logEl.scrollTop = logEl.scrollHeight;
+}
+function addSep() {
+  const hr = document.createElement("hr"); hr.className = "log-sep"; logEl.appendChild(hr);
+}
+
+// ── Status ─────────────────────────────────────────────────────────────────────
+function setStatus(running, paused, gameOver) {
+  isRunning = running; isPaused = paused; isGameOver = gameOver;
+  btnStart.disabled = running;
+  btnPause.disabled = !running || gameOver;
+  btnStop.disabled  = !running;
+  if (!running) {
+    btnPause.textContent = "Pause";
+    dot.className = "adv-dot adv-dot-idle";
+    statusEl.textContent = gameOver ? "Game Over" : "Idle";
+  } else if (paused) {
+    btnPause.textContent = "Resume";
+    dot.className = "adv-dot adv-dot-paused";
+    statusEl.textContent = "Paused";
+  } else {
+    btnPause.textContent = "Pause";
+    dot.className = "adv-dot adv-dot-running";
+    statusEl.textContent = "Running";
+  }
+}
+
+// ── Stats & sidebar ────────────────────────────────────────────────────────────
+function updateStats(msg) {
+  $("stat-turn").textContent  = msg.turn ?? "—";
+  $("stat-score").textContent = msg.score != null ? msg.score : "—";
+  const mem = msg.memory || {};
+  const dep = Array.isArray(mem.treasures_deposited) ? mem.treasures_deposited.filter(Boolean) : [];
+  $("stat-dep").textContent  = `${dep.length} / 14`;
+  $("stat-lamp").textContent = mem.lamp || "—";
+  $("adv-map-room").textContent = mem.room ? `— ${mem.room}` : "";
+  if (mem.goal)     $("goal-txt").textContent  = mem.goal;
+  if (mem.strategy) $("strat-txt").textContent = mem.strategy;
+
+  // Inventory — game-sourced from server
+  const inv = Array.isArray(mem.inventory) ? mem.inventory.filter(Boolean) : [];
+  const invEl = $("inv-items");
+  if (inv.length === 0) {
+    invEl.innerHTML = '<span class="inv-empty">Empty</span>';
+  } else {
+    invEl.innerHTML = inv.map(i =>
+      `<span class="inv-item${isTreasure(i) ? " treasure" : ""}">${esc(i)}</span>`
+    ).join("");
+  }
+
+  // Deposited
+  $("dep-wrap").innerHTML = dep.length === 0
+    ? '<span class="adv-dim">None yet</span>'
+    : dep.map(i => `<span class="adv-chip treasure">${esc(i)}</span>`).join("");
+}
+
+// ── D3 map ─────────────────────────────────────────────────────────────────────
+const svgEl  = $("adv-map-svg");
+const zoomG  = d3.select("#adv-zoom");
+const linksG = d3.select("#adv-links");
+const nodesG = d3.select("#adv-nodes");
+
+d3.select(svgEl).call(
+  d3.zoom().scaleExtent([0.15, 5])
+    .on("zoom", e => zoomG.attr("transform", e.transform))
+);
+
+let sim = null, posCache = {};
+const dims = () => ({ W: svgEl.clientWidth || 340, H: svgEl.clientHeight || 300 });
+
+// Split a room name into at most 2 lines for the SVG label
+function labelLines(name) {
+  const words = name.split(" ");
+  if (words.length <= 2) return words;
+  const mid = Math.ceil(words.length / 2);
+  return [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
+}
+
+// Set tspan children on a <text> element
+function setNodeLabel(textSel) {
+  textSel.each(function(d) {
+    const t = d3.select(this);
+    t.selectAll("tspan").remove();
+    const lines = labelLines(d.id);
+    lines.forEach((line, i) => {
+      t.append("tspan")
+        .attr("x", 0)
+        .attr("dy", i === 0 ? "14px" : "1.15em")
+        .text(line);
+    });
+  });
+}
+
+function updateMap(edges, currentRoom) {
+  const hint = $("adv-map-hint");
+  if (!edges || !edges.length) {
+    hint.style.display = "";
+    linksG.selectAll("*").remove();
+    nodesG.selectAll("*").remove();
+    if (sim) { sim.stop(); sim = null; }
+    return;
+  }
+  hint.style.display = "none";
+
+  // Build node/link arrays
+  const nodeMap = new Map();
+  for (const e of edges) {
+    if (!nodeMap.has(e.source)) nodeMap.set(e.source, { id: e.source });
+    if (!nodeMap.has(e.target)) nodeMap.set(e.target, { id: e.target });
+  }
+  const nodes = [...nodeMap.values()];
+  const links = edges.map(e => ({ source: e.source, target: e.target, dir: e.dir }));
+
+  // Restore cached positions
+  const { W, H } = dims();
+  nodes.forEach(n => {
+    if (posCache[n.id]) { n.x = posCache[n.id].x; n.y = posCache[n.id].y; }
+    else { n.x = W/2 + (Math.random()-.5)*80; n.y = H/2 + (Math.random()-.5)*80; }
+  });
+
+  if (sim) sim.stop();
+
+  // ── Links ──
+  const lSel = linksG.selectAll("g.lg").data(links, (_, i) => i);
+  const lEnt = lSel.enter().append("g").attr("class", "lg");
+  lEnt.append("line").attr("class", "link-line");
+  lEnt.append("text").attr("class", "link-label");
+  lSel.exit().remove();
+  const lAll = lEnt.merge(lSel);
+
+  // ── Nodes ──
+  const nSel = nodesG.selectAll("g.ng").data(nodes, d => d.id);
+  const nEnt = nSel.enter().append("g").attr("class", "ng node-visited")
+    .call(d3.drag()
+      .on("start", (e,d) => { if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on("drag",  (e,d) => { d.fx=e.x; d.fy=e.y; })
+      .on("end",   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; posCache[d.id]={x:d.x,y:d.y}; })
+    );
+  nEnt.append("circle").attr("class", "node-dot");
+  nEnt.append("text").attr("class", "node-name");
+  nEnt.append("title");
+  nSel.exit().remove();
+  const nAll = nEnt.merge(nSel);
+
+  // Update class and labels on every render (current room may change)
+  nAll.attr("class", d => `ng ${d.id === currentRoom ? "node-current" : "node-visited"}`);
+  nAll.select("title").text(d => d.id);
+  nAll.select(".node-name").call(setNodeLabel);
+
+  // ── Simulation ──
+  sim = d3.forceSimulation(nodes)
+    .force("link",    d3.forceLink(links).id(d => d.id).distance(110))
+    .force("charge",  d3.forceManyBody().strength(-300))
+    .force("center",  d3.forceCenter(W/2, H/2))
+    .force("collide", d3.forceCollide(48))   // large radius to keep labels clear
+    .alphaDecay(0.02)
+    .on("tick", () => {
+      nodes.forEach(n => { posCache[n.id] = { x: n.x, y: n.y }; });
+
+      lAll.select("line")
+        .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      lAll.select("text")
+        .attr("x", d => (d.source.x + d.target.x) / 2)
+        .attr("y", d => (d.source.y + d.target.y) / 2)
+        .text(d => d.dir);
+
+      nAll.attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────────
+let ws, retryTimer;
+function connect() {
+  clearTimeout(retryTimer);
+  ws = new WebSocket(`ws://${location.host}/adventure/ws`);
+  ws.onclose = () => { retryTimer = setTimeout(connect, 2000); };
+  ws.onmessage = e => {
+    let msg; try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.memory) { updateStats(msg); updateMap(msg.memory.map_edges||[], msg.memory.room||""); }
+    setStatus(msg.running??isRunning, msg.paused??isPaused, msg.game_over??isGameOver);
+    switch (msg.type) {
+      case "state_sync": break;
+      case "game_output": {
+        const t = (msg.text||"").replace(/>\s*$/, "").trim();
+        if (t) { addSep(); addLog("log-output", t); }
+        break;
+      }
+      case "command_sent": if (msg.command) addLog("log-command", msg.command); break;
+      case "thinking":  addLog("log-thinking", `thinking… (turn ${msg.turn})`); break;
+      case "paused":    addLog("log-event", "— paused —"); break;
+      case "resumed":   addLog("log-event", "— resumed —"); break;
+      case "stopped":   addLog("log-event", "— stopped —"); break;
+      case "game_over": {
+        const t = (msg.text||"").trim(); if (t) addLog("log-output", t);
+        const el = document.createElement("div"); el.className = "log-entry log-gameover";
+        el.textContent = msg.score != null ? `GAME OVER — Score: ${msg.score} / 350` : "GAME OVER";
+        logEl.appendChild(el); if (asc.checked) logEl.scrollTop = logEl.scrollHeight;
+        break;
+      }
+      case "error": addLog("log-error", `Error: ${msg.message}`); break;
+    }
+  };
+}
+
+async function post(path) {
+  try { return await (await fetch(path, { method: "POST" })).json(); }
+  catch(e) { addLog("log-error", `Error: ${e}`); }
+}
+
+btnStart.addEventListener("click", async () => {
+  logEl.innerHTML = ""; posCache = {};
+  linksG.selectAll("*").remove(); nodesG.selectAll("*").remove();
+  $("adv-map-hint").style.display = "";
+  await post("/adventure/start");
+});
+btnPause.addEventListener("click", () => post(isPaused ? "/adventure/resume" : "/adventure/pause"));
+btnStop.addEventListener ("click", () => post("/adventure/stop"));
+window.addEventListener("resize", () => {
+  if (sim) { const{W,H}=dims(); sim.force("center",d3.forceCenter(W/2,H/2)).alpha(0.2).restart(); }
+});
+
+setStatus(false, false, false);
+connect();
+</script>
+{% endblock %}

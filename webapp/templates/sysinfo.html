@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}Sysinfo{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .si-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-top: 0.75rem;
+  }
+  .si-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 0.9rem 1rem;
+  }
+  .si-card-title {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--yellow);
+    text-transform: uppercase;
+    margin-bottom: 0.65rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+  }
+  .si-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.18rem 0;
+    font-size: 12px;
+  }
+  .si-label { color: var(--dim); }
+  .si-val   { color: var(--text); font-weight: 700; }
+  .si-val.ok     { color: var(--green); }
+  .si-val.warn   { color: var(--yellow); }
+  .si-val.danger { color: var(--red); }
+
+  /* Bar */
+  .bar-wrap {
+    background: var(--bg3);
+    height: 6px;
+    margin-top: 4px;
+    margin-bottom: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    transition: width 0.4s ease;
+  }
+  .bar-fill.ok     { background: var(--green); }
+  .bar-fill.warn   { background: var(--yellow); }
+  .bar-fill.danger { background: var(--red); }
+
+  /* Core grid */
+  .core-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+    gap: 4px;
+    margin-top: 0.5rem;
+  }
+  .core-cell {
+    background: var(--bg3);
+    text-align: center;
+    padding: 3px 2px;
+    font-size: 10px;
+  }
+  .core-cell .core-num { color: var(--dim); font-size: 9px; }
+  .core-cell .core-pct { font-weight: 700; }
+
+  /* Disk rows */
+  .disk-row { margin-bottom: 0.5rem; }
+  .disk-mount { font-size: 11px; color: var(--dim); }
+  .disk-detail { display: flex; justify-content: space-between; font-size: 11px; }
+
+  /* Process table */
+  .proc-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .proc-table th { color: var(--dim); text-align: left; padding: 2px 4px; font-weight: 400; font-size: 10px; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+  .proc-table td { padding: 2px 4px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .proc-table tr:hover td { background: var(--bg3); }
+  .proc-table .td-name { max-width: 140px; }
+
+  /* Status bar */
+  .si-status {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    font-size: 11px;
+    color: var(--dim);
+    padding: 0.4rem 0;
+  }
+  .si-status .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 4px;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; }
+    50%      { opacity:0.35; }
+  }
+  .apt-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .apt-badge.none { color: var(--green); border: 1px solid var(--green); }
+  .apt-badge.some { color: var(--yellow); border: 1px solid var(--yellow); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">SYSINFO</div>
+
+<div class="si-status">
+  <span><span class="dot"></span>live &mdash; refreshing every 3s</span>
+  <span id="si-ts">—</span>
+  <span id="si-host">—</span>
+  <span id="si-kernel">—</span>
+  <span id="si-uptime">up —</span>
+</div>
+
+<div class="si-grid" id="si-grid">
+
+  <!-- CPU Overview -->
+  <div class="si-card" id="card-cpu">
+    <div class="si-card-title">CPU</div>
+    <div class="si-row"><span class="si-label">usage</span><span class="si-val" id="cpu-pct">—</span></div>
+    <div class="bar-wrap"><div class="bar-fill" id="cpu-bar" style="width:0%"></div></div>
+    <div class="si-row"><span class="si-label">load avg</span><span class="si-val" id="cpu-load">—</span></div>
+    <div class="si-row"><span class="si-label">freq</span><span class="si-val" id="cpu-freq">—</span></div>
+    <div class="si-row"><span class="si-label">cores</span><span class="si-val" id="cpu-cores">—</span></div>
+    <div class="core-grid" id="core-grid"></div>
+  </div>
+
+  <!-- Memory -->
+  <div class="si-card" id="card-mem">
+    <div class="si-card-title">Memory</div>
+    <div class="si-row"><span class="si-label">used</span><span class="si-val" id="mem-used">—</span></div>
+    <div class="bar-wrap"><div class="bar-fill" id="mem-bar" style="width:0%"></div></div>
+    <div class="si-row"><span class="si-label">total</span><span class="si-val" id="mem-total">—</span></div>
+    <div class="si-row"><span class="si-label">available</span><span class="si-val" id="mem-avail">—</span></div>
+    <div style="margin-top:0.6rem">
+      <div class="si-card-title" style="margin-top:0.4rem">Swap</div>
+      <div class="si-row"><span class="si-label">used</span><span class="si-val" id="swap-used">—</span></div>
+      <div class="bar-wrap"><div class="bar-fill" id="swap-bar" style="width:0%"></div></div>
+      <div class="si-row"><span class="si-label">total</span><span class="si-val" id="swap-total">—</span></div>
+    </div>
+  </div>
+
+  <!-- System -->
+  <div class="si-card" id="card-sys">
+    <div class="si-card-title">System</div>
+    <div class="si-row"><span class="si-label">logged-in users</span><span class="si-val" id="sys-users">—</span></div>
+    <div class="si-row" id="sys-names-row" style="display:none">
+      <span class="si-label">who</span><span class="si-val" id="sys-names" style="font-size:11px;max-width:180px;text-align:right;word-break:break-all">—</span>
+    </div>
+    <div class="si-row">
+      <span class="si-label">apt upgradable</span>
+      <span id="apt-badge">—</span>
+    </div>
+    <div class="si-row"><span class="si-label">net sent</span><span class="si-val" id="net-sent">—</span></div>
+    <div class="si-row"><span class="si-label">net recv</span><span class="si-val" id="net-recv">—</span></div>
+  </div>
+
+  <!-- Disk -->
+  <div class="si-card" id="card-disk">
+    <div class="si-card-title">Disks</div>
+    <div id="disk-list"></div>
+  </div>
+
+  <!-- Processes -->
+  <div class="si-card" style="grid-column: span 2">
+    <div class="si-card-title">Top Processes (by CPU)</div>
+    <table class="proc-table">
+      <thead><tr>
+        <th>PID</th><th>Name</th><th>CPU %</th><th>Mem MB</th>
+      </tr></thead>
+      <tbody id="proc-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block footer %}&#9646; Sysinfo{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const colorClass = pct => pct >= 85 ? 'danger' : pct >= 60 ? 'warn' : 'ok';
+
+function setBar(id, pct) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.width = pct + '%';
+  el.className = 'bar-fill ' + colorClass(pct);
+}
+
+function setVal(id, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  if (cls !== undefined) el.className = 'si-val ' + cls;
+}
+
+function fmtGB(gb) {
+  if (gb >= 1) return gb.toFixed(1) + ' GB';
+  return (gb * 1024).toFixed(0) + ' MB';
+}
+
+function render(d) {
+  // Status bar
+  document.getElementById('si-ts').textContent = d.ts;
+  document.getElementById('si-host').textContent = d.hostname;
+  document.getElementById('si-kernel').textContent = d.kernel;
+  document.getElementById('si-uptime').textContent = 'up ' + d.uptime;
+
+  // CPU
+  const cpct = d.cpu.percent;
+  setVal('cpu-pct', cpct.toFixed(1) + '%', colorClass(cpct));
+  setBar('cpu-bar', cpct);
+  setVal('cpu-load', d.cpu.load_avg.join(' / '));
+  setVal('cpu-freq', d.cpu.freq_mhz ? d.cpu.freq_mhz + ' MHz' : '—');
+  setVal('cpu-cores', `${d.cpu.count_physical}P / ${d.cpu.count_logical}L`);
+
+  // Per-core grid
+  const cg = document.getElementById('core-grid');
+  cg.innerHTML = d.cpu.per_core.map((p, i) =>
+    `<div class="core-cell">
+      <div class="core-num">c${i}</div>
+      <div class="core-pct ${colorClass(p)}">${p.toFixed(0)}%</div>
+    </div>`
+  ).join('');
+
+  // Memory
+  const mpct = d.memory.percent;
+  setVal('mem-used', `${fmtGB(d.memory.used_gb)} (${mpct}%)`, colorClass(mpct));
+  setBar('mem-bar', mpct);
+  setVal('mem-total', fmtGB(d.memory.total_gb));
+  setVal('mem-avail', fmtGB(d.memory.available_gb));
+
+  // Swap
+  const spct = d.swap.percent;
+  setVal('swap-used', d.swap.total_gb > 0 ? `${fmtGB(d.swap.used_gb)} (${spct}%)` : 'none', colorClass(spct));
+  setBar('swap-bar', spct);
+  setVal('swap-total', d.swap.total_gb > 0 ? fmtGB(d.swap.total_gb) : '—');
+
+  // System
+  setVal('sys-users', d.users.count, d.users.count > 1 ? 'warn' : 'ok');
+  if (d.users.names.length) {
+    document.getElementById('sys-names-row').style.display = 'flex';
+    document.getElementById('sys-names').textContent = d.users.names.join(', ');
+  }
+
+  // Apt
+  const aptEl = document.getElementById('apt-badge');
+  if (d.apt_upgradable === null) {
+    aptEl.textContent = '—';
+    aptEl.className = 'si-val';
+  } else {
+    aptEl.textContent = d.apt_upgradable === 0 ? 'up to date' : d.apt_upgradable + ' pending';
+    aptEl.className = 'apt-badge ' + (d.apt_upgradable === 0 ? 'none' : 'some');
+  }
+
+  // Network
+  setVal('net-sent', d.net.bytes_sent_gb.toFixed(2) + ' GB');
+  setVal('net-recv', d.net.bytes_recv_gb.toFixed(2) + ' GB');
+
+  // Disks
+  const dl = document.getElementById('disk-list');
+  dl.innerHTML = d.disks.map(dk =>
+    `<div class="disk-row">
+      <div class="disk-mount">${dk.device} → ${dk.mount}</div>
+      <div class="disk-detail">
+        <span style="color:var(--dim)">${fmtGB(dk.used_gb)} / ${fmtGB(dk.total_gb)}</span>
+        <span class="${colorClass(dk.percent)}" style="font-weight:700">${dk.percent}%</span>
+      </div>
+      <div class="bar-wrap"><div class="bar-fill ${colorClass(dk.percent)}" style="width:${dk.percent}%"></div></div>
+    </div>`
+  ).join('');
+
+  // Processes
+  const tbody = document.getElementById('proc-tbody');
+  tbody.innerHTML = d.processes.map(p =>
+    `<tr>
+      <td style="color:var(--dim)">${p.pid}</td>
+      <td class="td-name" title="${p.name}">${p.name}</td>
+      <td class="${colorClass(p.cpu)}" style="font-weight:700">${p.cpu.toFixed(1)}%</td>
+      <td style="color:var(--dim)">${p.mem_mb}</td>
+    </tr>`
+  ).join('');
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/sysinfo/data');
+    if (r.ok) render(await r.json());
+  } catch(e) {}
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+{% endblock %}

@@ -4,12 +4,16 @@
 import asyncio
 import json
 import os
+import platform
+import subprocess
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+import psutil
 
 try:
     import websockets as _ws_lib
@@ -1875,3 +1879,586 @@ async def ambulance_page(
         "result": result,
         "error": error,
     })
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Adventure — Colossal Cave played by Claude
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import re as _re
+from collections import deque as _deque
+import anthropic as _anthropic
+from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
+
+_ADV_GAME     = "/usr/games/adventure"
+_ADV_MODEL    = "claude-opus-4-6"
+_ADV_HISTORY  = 6
+_ADV_TOKENS   = 1500
+
+_ADV_SYSTEM = """\
+You are playing Colossal Cave Adventure with the goal of achieving the maximum \
+score (350 points) by collecting all treasures and depositing them in the building.
+
+═══ GAME KNOWLEDGE ═══
+
+GEOGRAPHY
+- Start: At End Of Road. Building is west (has lamp, keys, food, water, cage+bird).
+- Grate is south of valley — unlock with keys to enter cave system.
+- Underground is a large cave network; map it systematically.
+
+MAGIC WORDS (use exact spelling, lowercase)
+- xyzzy  : teleport between Debris Room and Inside Building
+- plugh   : teleport between Y2 and Inside Building
+- plover  : teleport between Alcove and Plover Room (carry ONLY the emerald)
+- fee fie foe foo : makes the golden eggs reappear (after troll takes them)
+
+TREASURES (bring each to Building to score)
+  gold nugget, diamonds, jewelry, coins, chest (pirate's), golden eggs,
+  trident, ming vase, emerald, pearl, platinum pyramid, persian rug,
+  rare spices, silver bars
+
+PUZZLES & SOLUTIONS
+- Snake in Hall of Mountain King → release bird from cage (take cage first, then "release bird")
+- Troll at bridge → give troll a treasure to pass (eggs work; recover with "fee fie foe foo" back in cave)
+- Pirate steals treasure → find his chest deep in the Maze of Twisty Passages
+- Locked grate → "unlock grate" while carrying keys
+- Plover room / emerald → drop everything except emerald, then "plover"
+- Dwarves → keep moving; you can kill them by throwing the axe
+
+LAMP
+- Fuel lasts ~330 lit moves. Warnings appear when low. Underground in the dark = death.
+- Turn lamp OFF above ground or in naturally lit areas to conserve fuel.
+- "on" / "off" control the lamp.
+
+CARRY LIMIT ≈ 7 items. Drop food and water once no longer needed for ballast.
+
+DEPOSIT CYCLE: collect 4-5 treasures → xyzzy or plugh back to Building → drop all → return.
+
+═══ RESPONSE FORMAT ═══
+
+Respond ONLY with valid JSON — no preamble, no explanation, no markdown:
+{
+  "command": "one or two words, all lowercase, no punctuation",
+  "memory": "<your complete rewritten memory — see below>"
+}
+
+THE MEMORY FIELD is your only persistent state between turns. Rewrite it in
+full every turn. Keep it dense but complete. Use this structure:
+
+ROOM: <current room name>
+MAP:
+  <Room A>: n=<dest>, s=<dest>, e=<dest>, ...
+  <Room B>: ...
+INVENTORY: <comma-separated items you're carrying>
+ITEMS_SEEN: <item: location, ...>
+TREASURES_DEPOSITED: <list>
+PUZZLES: <puzzle: status, ...>
+LAMP: <on/off, fuel estimate or last warning>
+GOAL: <immediate next action and why>
+STRATEGY: <broader plan>
+"""
+
+_ADV_INIT_MEMORY = """\
+ROOM: At End Of Road
+MAP:
+  (none yet)
+INVENTORY: (empty)
+ITEMS_SEEN: lamp/keys/food/water/cage+bird in Building
+TREASURES_DEPOSITED: (none)
+PUZZLES: grate=locked, snake=unseen, troll=unseen, pirate=unseen
+LAMP: off, full
+GOAL: go west into building; take lamp, keys, food, cage
+STRATEGY: collect surface items first, unlock grate, map cave systematically, \
+deposit treasures via xyzzy/plugh, manage lamp fuel carefully\
+"""
+
+_ADV_GAME_OVER = (
+    "you scored", "the game is over",
+    "do you want to see your final score", "do you wish to see your score",
+)
+_ADV_SCORE_RE    = _re.compile(r"score[d]?\s+(\d+)\s+point", _re.I)
+_ADV_SCORE_INC_RE = _re.compile(r"up\s+by\s+(\d+)\s+point", _re.I)
+_ADV_INV_HOLDING = _re.compile(r"currently holding(?:[^:\n]*):\s*\n((?:[ \t]+.+\n?)+)", _re.I)
+_ADV_INV_NOTHING = _re.compile(r"aren'?t carrying|not carrying anything|empty.handed", _re.I)
+
+
+def _adv_is_over(text: str) -> bool:
+    t = text.lower()
+    return any(p in t for p in _ADV_GAME_OVER)
+
+
+def _adv_score(text: str) -> Optional[int]:
+    m = _ADV_SCORE_RE.search(text)
+    return int(m.group(1)) if m else None
+
+
+def _adv_parse_inventory(text: str) -> Optional[list]:
+    if _ADV_INV_NOTHING.search(text):
+        return []
+    m = _ADV_INV_HOLDING.search(text)
+    if not m:
+        return None
+    items = []
+    for line in m.group(1).splitlines():
+        item = _re.sub(r'\s*\(.*?\)\s*$', '', line.strip())
+        if item:
+            items.append(item)
+    return items
+
+
+def _adv_parse_memory(memory: str) -> dict:
+    def field(name):
+        m = _re.search(rf"^{name}:\s*(.+)$", memory, _re.M)
+        return m.group(1).strip() if m else ""
+
+    result = dict(room="", map_edges=[], inventory=[],
+                  treasures_deposited=[], lamp="", goal="", strategy="")
+    result["room"]     = field("ROOM")
+    result["lamp"]     = field("LAMP")
+    result["goal"]     = field("GOAL")
+    result["strategy"] = field("STRATEGY")
+
+    inv = field("INVENTORY")
+    if inv and inv.lower() not in ("(empty)", "empty", "none"):
+        result["inventory"] = [i.strip() for i in inv.split(",") if i.strip()]
+
+    dep = field("TREASURES_DEPOSITED")
+    if dep and dep.lower() not in ("(none)", "none"):
+        result["treasures_deposited"] = [i.strip() for i in dep.split(",") if i.strip()]
+
+    blk = _re.search(r"^MAP:\s*\n((?:[ \t]+.+\n?)*)", memory, _re.M)
+    if blk:
+        for line in blk.group(1).splitlines():
+            line = line.strip()
+            if not line or line.startswith("("):
+                continue
+            c = line.find(":")
+            if c == -1:
+                continue
+            room = line[:c].strip()
+            for pair in _re.finditer(r"(\w+)\s*=\s*([^,\n]+?)(?:,|$)", line[c+1:]):
+                d, dest = pair.group(1).strip(), pair.group(2).strip()
+                if dest and dest.lower() not in ("?", "unknown", ""):
+                    result["map_edges"].append({"source": room, "target": dest, "dir": d})
+    return result
+
+
+def _adv_parse_response(text: str, fallback: str) -> tuple[str, str]:
+    text = text.strip()
+    def _try(s):
+        try:
+            d = json.loads(s)
+            return d.get("command", "inventory"), d.get("memory", fallback)
+        except Exception:
+            return None
+    r = _try(text)
+    if r: return r
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)
+    if m:
+        r = _try(m.group())
+        if r: return r
+    m = _re.search(r'"command"\s*:\s*"([^"]+)"', text)
+    return (m.group(1) if m else "inventory"), fallback
+
+
+class _AdvConnMgr:
+    def __init__(self):
+        self.active: set[WebSocket] = set()
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active.add(ws)
+
+    def disconnect(self, ws: WebSocket):
+        self.active.discard(ws)
+
+    async def broadcast(self, data: dict):
+        msg = json.dumps(data)
+        dead = set()
+        for ws in list(self.active):
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.add(ws)
+        self.active -= dead
+
+
+class _AdvSession:
+    def __init__(self, mgr: _AdvConnMgr):
+        self._mgr      = mgr
+        self.process   = None
+        self.task      = None
+        self._run      = asyncio.Event()
+        self._run.set()
+        self.memory    = _ADV_INIT_MEMORY
+        self.turn      = 0
+        self.score     = None
+        self.inventory: list = []
+        self.running   = False
+        self.game_over = False
+        self.history: _deque[tuple[str,str]] = _deque(maxlen=_ADV_HISTORY)
+        self._client   = _anthropic.AsyncAnthropic()
+        self._replay: list[dict] = []   # full broadcast history for reconnects
+
+    def _reset(self):
+        self.memory    = _ADV_INIT_MEMORY
+        self.turn      = 0
+        self.score     = None
+        self.inventory = []
+        self.running   = False
+        self.game_over = False
+        self.history.clear()
+        self._replay.clear()
+        self._run.set()
+
+    async def _read(self) -> str:
+        buf = b""
+        while True:
+            chunk = await self.process.stdout.read(4096)
+            if not chunk:
+                break
+            buf += chunk
+            if buf.endswith(b"> "):
+                break
+        return buf.decode(errors="replace")
+
+    async def _send(self, cmd: str):
+        self.process.stdin.write((cmd + "\n").encode())
+        await self.process.stdin.drain()
+
+    async def _ask(self, user_content: str) -> str:
+        msgs = []
+        for u, a in self.history:
+            msgs.append({"role": "user",      "content": u})
+            msgs.append({"role": "assistant", "content": a})
+        msgs.append({"role": "user", "content": user_content})
+        for attempt in range(5):
+            try:
+                resp = await self._client.messages.create(
+                    model=_ADV_MODEL, max_tokens=_ADV_TOKENS,
+                    system=_ADV_SYSTEM, messages=msgs,
+                )
+                return resp.content[0].text
+            except Exception as e:
+                if attempt == 4:
+                    raise
+                wait = 2 ** attempt  # 1s, 2s, 4s, 8s
+                await self._mgr.broadcast({
+                    "type": "error",
+                    "message": f"API error (retrying in {wait}s): {e}",
+                })
+                await asyncio.sleep(wait)
+
+    async def _probe(self):
+        """Silently ask the game for inventory; update self.inventory.
+        Note: do NOT send 'score' — this version of adventure prompts yes/no
+        interactively and answering yes ends the game immediately."""
+        await self._send("inventory")
+        inv_out = await self._read()
+        items = _adv_parse_inventory(inv_out)
+        if items is not None:
+            self.inventory = items
+
+    async def _bcast(self, type_: str, **kw):
+        parsed = _adv_parse_memory(self.memory)
+        parsed["inventory"] = self.inventory          # override with game-sourced list
+        msg = {
+            "type": type_, "turn": self.turn, "score": self.score,
+            "running": self.running, "paused": not self._run.is_set(),
+            "game_over": self.game_over,
+            "memory": {"raw": self.memory, **parsed},
+            **kw,
+        }
+        self._replay.append(msg)
+        if len(self._replay) > 2000:
+            self._replay = self._replay[-2000:]
+        await self._mgr.broadcast(msg)
+
+    async def _loop(self):
+        self.running = True
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                _ADV_GAME,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            splash = await self._read()
+            await self._bcast("game_output", text=splash)
+            await self._send("no")
+            out = await self._read()
+            # Handle a second opening prompt (e.g. "Would you like instructions?"
+            # after answering the restore-saved-game question).
+            if len(out.rstrip()) < 400 and "?" in out:
+                await self._bcast("game_output", text=out)
+                await self._send("no")
+                out = await self._read()
+            await self._bcast("game_output", text=out)
+
+            while True:
+                await self._run.wait()
+                if _adv_is_over(out):
+                    self.game_over = True
+                    s = _adv_score(out)
+                    if s is not None:
+                        self.score = s
+                    await self._bcast("game_over", text=out)
+                    break
+                self.turn += 1
+                uc = f"[MEMORY]\n{self.memory}\n\n[GAME OUTPUT]\n{out.strip()}"
+                await self._bcast("thinking")
+                raw = await self._ask(uc)
+                cmd, new_mem = _adv_parse_response(raw, self.memory)
+                self.memory = new_mem or self.memory
+                self.history.append((uc, raw))
+                await self._bcast("command_sent", command=cmd)
+                await self._send(cmd)
+                out = await self._read()
+                # Parse score from game output.  Absolute "scored N points"
+                # replaces; incremental "up by N points" accumulates.
+                abs_s = _adv_score(out)
+                if abs_s is not None:
+                    self.score = abs_s
+                else:
+                    m = _ADV_SCORE_INC_RE.search(out)
+                    if m:
+                        self.score = (self.score or 0) + int(m.group(1))
+                await self._probe()
+                await self._bcast("game_output", text=out)
+                await asyncio.sleep(0.3)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await self._mgr.broadcast({"type": "error", "message": str(e)})
+        finally:
+            self.running = False
+            if self.process and self.process.returncode is None:
+                try:
+                    self.process.terminate()
+                    await self.process.wait()
+                except Exception:
+                    pass
+
+    async def start(self):
+        if self.running:
+            return {"status": "already_running"}
+        if self.task and not self.task.done():
+            self.task.cancel()
+            try: await self.task
+            except asyncio.CancelledError: pass
+        self._reset()
+        self.task = asyncio.create_task(self._loop())
+        return {"status": "started"}
+
+    async def pause(self):
+        self._run.clear()
+        await self._bcast("paused")
+        return {"status": "paused"}
+
+    async def resume(self):
+        self._run.set()
+        await self._bcast("resumed")
+        return {"status": "resumed"}
+
+    async def stop(self):
+        if self.task and not self.task.done():
+            self.task.cancel()
+            try: await self.task
+            except asyncio.CancelledError: pass
+        self.running = False
+        await self._bcast("stopped")
+        return {"status": "stopped"}
+
+
+_adv_mgr     = _AdvConnMgr()
+_adv_session = _AdvSession(_adv_mgr)
+
+
+@app.get("/adventure", response_class=HTMLResponse)
+async def adventure_page(request: Request):
+    return templates.TemplateResponse("adventure.html", {
+        "request": request, "active": "adventure",
+    })
+
+
+@app.post("/adventure/start")
+async def adventure_start():
+    return JSONResponse(await _adv_session.start())
+
+@app.post("/adventure/pause")
+async def adventure_pause():
+    return JSONResponse(await _adv_session.pause())
+
+@app.post("/adventure/resume")
+async def adventure_resume():
+    return JSONResponse(await _adv_session.resume())
+
+@app.post("/adventure/stop")
+async def adventure_stop():
+    return JSONResponse(await _adv_session.stop())
+
+
+@app.websocket("/adventure/ws")
+async def adventure_ws(ws: WebSocket):
+    await _adv_mgr.connect(ws)
+    if _adv_session._replay:
+        # Replay full history so reconnecting clients restore log + state.
+        for msg in _adv_session._replay:
+            await ws.send_text(json.dumps(msg))
+    else:
+        # No history yet — send a bare state sync.
+        parsed = _adv_parse_memory(_adv_session.memory)
+        await ws.send_text(json.dumps({
+            "type": "state_sync", "turn": _adv_session.turn,
+            "score": _adv_session.score, "running": _adv_session.running,
+            "paused": not _adv_session._run.is_set(),
+            "game_over": _adv_session.game_over,
+            "memory": {"raw": _adv_session.memory, **parsed},
+        }))
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        _adv_mgr.disconnect(ws)
+
+
+# ---------------------------------------------------------------------------
+# Sysinfo
+# ---------------------------------------------------------------------------
+
+_apt_cache: dict = {"ts": 0, "count": None}
+_APT_TTL = 300  # seconds between apt checks
+
+
+def _fetch_apt_upgradable() -> int | None:
+    try:
+        out = subprocess.check_output(
+            ["apt", "list", "--upgradable"],
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        ).decode()
+        # each upgradable package appears on its own line after the header
+        return max(0, out.count("\n") - 1)
+    except Exception:
+        return None
+
+
+def _get_apt_upgradable() -> int | None:
+    now = time.time()
+    if now - _apt_cache["ts"] > _APT_TTL:
+        _apt_cache["count"] = _fetch_apt_upgradable()
+        _apt_cache["ts"] = now
+    return _apt_cache["count"]
+
+
+def _sysinfo_data() -> dict:
+    # CPU
+    cpu_pct = psutil.cpu_percent(interval=0.2)
+    per_core = psutil.cpu_percent(interval=None, percpu=True)
+    freq = psutil.cpu_freq()
+    load1, load5, load15 = os.getloadavg()
+
+    # Memory
+    mem = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+
+    # Disk — skip special filesystems
+    skip_types = {"tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs", "cgroup", "cgroup2"}
+    disks = []
+    for part in psutil.disk_partitions():
+        if part.fstype in skip_types:
+            continue
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+        except PermissionError:
+            continue
+        disks.append({
+            "mount": part.mountpoint,
+            "device": part.device,
+            "total_gb": round(usage.total / 1e9, 1),
+            "used_gb": round(usage.used / 1e9, 1),
+            "free_gb": round(usage.free / 1e9, 1),
+            "percent": usage.percent,
+        })
+
+    # Network
+    net = psutil.net_io_counters()
+
+    # Users
+    users = psutil.users()
+    user_names = sorted({u.name for u in users})
+
+    # Uptime
+    boot_ts = psutil.boot_time()
+    uptime_secs = int(time.time() - boot_ts)
+    days, rem = divmod(uptime_secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    uptime_str = f"{days}d {hours}h {mins}m" if days else f"{hours}h {mins}m"
+
+    # Top processes by CPU
+    procs = []
+    for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_info", "status"]):
+        try:
+            info = p.info
+            if info["status"] == psutil.STATUS_ZOMBIE:
+                continue
+            mem_mb = round((info["memory_info"].rss if info["memory_info"] else 0) / 1e6, 1)
+            procs.append({"pid": info["pid"], "name": info["name"] or "?",
+                          "cpu": info["cpu_percent"] or 0.0, "mem_mb": mem_mb})
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    procs.sort(key=lambda p: p["cpu"], reverse=True)
+
+    return {
+        "cpu": {
+            "percent": cpu_pct,
+            "per_core": per_core,
+            "freq_mhz": round(freq.current) if freq else None,
+            "freq_max_mhz": round(freq.max) if freq else None,
+            "count_logical": psutil.cpu_count(),
+            "count_physical": psutil.cpu_count(logical=False),
+            "load_avg": [round(load1, 2), round(load5, 2), round(load15, 2)],
+        },
+        "memory": {
+            "total_gb": round(mem.total / 1e9, 2),
+            "used_gb": round(mem.used / 1e9, 2),
+            "available_gb": round(mem.available / 1e9, 2),
+            "percent": mem.percent,
+        },
+        "swap": {
+            "total_gb": round(swap.total / 1e9, 2),
+            "used_gb": round(swap.used / 1e9, 2),
+            "percent": swap.percent,
+        },
+        "disks": disks,
+        "net": {
+            "bytes_sent_gb": round(net.bytes_sent / 1e9, 3),
+            "bytes_recv_gb": round(net.bytes_recv / 1e9, 3),
+            "packets_sent": net.packets_sent,
+            "packets_recv": net.packets_recv,
+        },
+        "users": {"count": len(users), "names": user_names},
+        "uptime": uptime_str,
+        "hostname": platform.node(),
+        "kernel": platform.release(),
+        "os": platform.version(),
+        "apt_upgradable": _get_apt_upgradable(),
+        "processes": procs[:15],
+        "ts": datetime.now(ET).strftime("%H:%M:%S"),
+    }
+
+
+@app.get("/sysinfo", response_class=HTMLResponse)
+async def sysinfo_page(request: Request):
+    return templates.TemplateResponse("sysinfo.html", {
+        "request": request, "active": "sysinfo",
+    })
+
+
+@app.get("/sysinfo/data")
+async def sysinfo_data():
+    from fastapi.responses import JSONResponse as _JSR
+    data = await asyncio.get_event_loop().run_in_executor(None, _sysinfo_data)
+    return _JSR(data)
