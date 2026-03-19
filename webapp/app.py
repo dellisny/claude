@@ -3,11 +3,16 @@
 
 import asyncio
 import json
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import platform
 import subprocess
 import time
 import urllib.request
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
@@ -21,18 +26,120 @@ try:
 except ImportError:
     _HAS_WS = False
 
+import threading as _threading
+
 import feedparser
 import requests
 import yfinance as yf
-from fastapi import FastAPI, Form, Request
+import secrets
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="Dashboard")
 templates = Jinja2Templates(directory="templates")
 
+_basic = HTTPBasic()
+_GITTYUP_USER = os.environ.get("GITTYUP_USER", "admin")
+_GITTYUP_PASS = os.environ.get("GITTYUP_PASS", "changeme")
+
+def _require_gittyup_auth(creds: HTTPBasicCredentials = Depends(_basic)):
+    ok = (
+        secrets.compare_digest(creds.username.encode(), _GITTYUP_USER.encode()) and
+        secrets.compare_digest(creds.password.encode(), _GITTYUP_PASS.encode())
+    )
+    if not ok:
+        raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Basic realm=\"gittyup\""}, detail="Unauthorized")
+
+# ---------------------------------------------------------------------------
+# Visitor log + IP info
+
+_visitor_log: deque = deque(maxlen=100)
+_SKIP_LOG_PATHS = {"/sysinfo/data", "/favicon.ico"}
+_ip_info_cache: dict = {}  # ip -> {country, city, org} | None (pending)
+
+
+async def _fetch_ip_info(ip: str) -> None:
+    try:
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(
+            None,
+            lambda: urllib.request.urlopen(
+                f"https://ipinfo.io/{ip}/json", timeout=5
+            ).read(),
+        )
+        data = json.loads(raw)
+        org = data.get("org", "")
+        # strip leading ASN e.g. "AS24940 Hetzner" -> "Hetzner"
+        if org and org.startswith("AS"):
+            org = org.split(" ", 1)[-1] if " " in org else org
+        _ip_info_cache[ip] = {
+            "country": data.get("country", ""),
+            "city": data.get("city", ""),
+            "org": org,
+            "hostname": data.get("hostname", ""),
+        }
+    except Exception:
+        _ip_info_cache[ip] = {}
+
+
+@app.middleware("http")
+async def _log_visitors(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path not in _SKIP_LOG_PATHS:
+        ip = (
+            request.headers.get("X-Real-IP")
+            or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            or (request.client.host if request.client else "?")
+        )
+        _visitor_log.appendleft({
+            "ts": datetime.now(ET).strftime("%H:%M:%S"),
+            "ip": ip,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "ua": request.headers.get("User-Agent", "")[:150],
+        })
+        if ip and ip not in _ip_info_cache:
+            _ip_info_cache[ip] = None  # mark pending
+            asyncio.create_task(_fetch_ip_info(ip))
+    return response
+
 ET = ZoneInfo("America/New_York")
 FETCH_TIMEOUT = 8
+
+# ---------------------------------------------------------------------------
+# Claude API usage logging
+# ---------------------------------------------------------------------------
+
+_USAGE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "claude_usage.json")
+_USAGE_LOCK = _threading.Lock()
+
+
+def _record_usage(app: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    os.makedirs(os.path.dirname(_USAGE_FILE), exist_ok=True)
+    with _USAGE_LOCK:
+        try:
+            with open(_USAGE_FILE) as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+        entry = data.setdefault(app, {"model": model, "calls": 0, "input_tokens": 0, "output_tokens": 0})
+        entry["calls"] += 1
+        entry["input_tokens"] += input_tokens
+        entry["output_tokens"] += output_tokens
+        entry["model"] = model
+        with open(_USAGE_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+
+
+def _get_usage_stats() -> dict:
+    try:
+        with open(_USAGE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 # ---------------------------------------------------------------------------
 # Headlines
@@ -481,6 +588,7 @@ def _resolve_to_ticker(user_input: str) -> tuple[str, bool]:
             }],
         )
         ticker = resp.content[0].text.strip().upper().strip('"').strip("'").split()[0]
+        _record_usage("stock_ticker", "claude-haiku-4-5-20251001", resp.usage.input_tokens, resp.usage.output_tokens)
         if ticker and ticker != "UNKNOWN" and ticker.isalpha() and len(ticker) <= 5:
             return ticker, True
     except Exception:
@@ -1221,6 +1329,7 @@ def _tq_call_claude(history: list[dict], questions_left: int, attempt: int = 0) 
         system=_TQ_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
+    _record_usage("twenty_questions", "claude-sonnet-4-6", resp.usage.input_tokens, resp.usage.output_tokens)
     text = resp.content[0].text.strip()
 
     def parse(t):
@@ -1976,9 +2085,14 @@ _ADV_GAME_OVER = (
     "you scored", "the game is over",
     "do you want to see your final score", "do you wish to see your score",
 )
-_ADV_SCORE_RE    = _re.compile(r"score[d]?\s+(\d+)\s+point", _re.I)
+_ADV_SCORE_RE     = _re.compile(r"score[d]?\s+(\d+)\s+(?:of\s+\d+\s+)?point", _re.I)
+_ADV_SCORE_CMD_RE = _re.compile(r"score\s+(\d+)\s+out\s+of", _re.I)
 _ADV_SCORE_INC_RE = _re.compile(r"up\s+by\s+(\d+)\s+point", _re.I)
-_ADV_INV_HOLDING = _re.compile(r"currently holding(?:[^:\n]*):\s*\n((?:[ \t]+.+\n?)+)", _re.I)
+# Items appear at column 0 (no indent) after a blank line, before the "> " prompt.
+_ADV_INV_HOLDING = _re.compile(
+    r"(?:currently\s+(?:holding|carrying)|you(?:'re|\s+are)\s+carrying|you\s+have)"
+    r"(?:[^:\n]*):\s+"
+    r"((?:[ \t]*(?!>)[^\n]+\n?)+)", _re.I)
 _ADV_INV_NOTHING = _re.compile(r"aren'?t carrying|not carrying anything|empty.handed", _re.I)
 
 
@@ -1988,8 +2102,11 @@ def _adv_is_over(text: str) -> bool:
 
 
 def _adv_score(text: str) -> Optional[int]:
-    m = _ADV_SCORE_RE.search(text)
-    return int(m.group(1)) if m else None
+    for pat in (_ADV_SCORE_RE, _ADV_SCORE_CMD_RE):
+        m = pat.search(text)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def _adv_parse_inventory(text: str) -> Optional[list]:
@@ -2099,6 +2216,8 @@ class _AdvSession:
         self.history: _deque[tuple[str,str]] = _deque(maxlen=_ADV_HISTORY)
         self._client   = _anthropic.AsyncAnthropic()
         self._replay: list[dict] = []   # full broadcast history for reconnects
+        self._pending_cmd: Optional[str] = None
+        self._graceful_stop: bool = False
 
     def _reset(self):
         self.memory    = _ADV_INIT_MEMORY
@@ -2110,6 +2229,8 @@ class _AdvSession:
         self.history.clear()
         self._replay.clear()
         self._run.set()
+        self._pending_cmd  = None
+        self._graceful_stop = False
 
     async def _read(self) -> str:
         buf = b""
@@ -2138,6 +2259,7 @@ class _AdvSession:
                     model=_ADV_MODEL, max_tokens=_ADV_TOKENS,
                     system=_ADV_SYSTEM, messages=msgs,
                 )
+                _record_usage("adventure", _ADV_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
                 return resp.content[0].text
             except Exception as e:
                 if attempt == 4:
@@ -2205,30 +2327,66 @@ class _AdvSession:
                     await self._bcast("game_over", text=out)
                     break
                 self.turn += 1
-                uc = f"[MEMORY]\n{self.memory}\n\n[GAME OUTPUT]\n{out.strip()}"
-                await self._bcast("thinking")
-                raw = await self._ask(uc)
-                cmd, new_mem = _adv_parse_response(raw, self.memory)
-                self.memory = new_mem or self.memory
-                self.history.append((uc, raw))
+
+                # Check for a user-injected command; skip the AI if one is queued.
+                pending = self._pending_cmd
+                self._pending_cmd = None
+                if pending:
+                    cmd = pending
+                else:
+                    uc = f"[MEMORY]\n{self.memory}\n\n[GAME OUTPUT]\n{out.strip()}"
+                    await self._bcast("thinking")
+                    raw = await self._ask(uc)
+                    cmd, new_mem = _adv_parse_response(raw, self.memory)
+                    self.memory = new_mem or self.memory
+                    self.history.append((uc, raw))
+
                 await self._bcast("command_sent", command=cmd)
                 await self._send(cmd)
                 out = await self._read()
-                # Parse score from game output.  Absolute "scored N points"
-                # replaces; incremental "up by N points" accumulates.
-                abs_s = _adv_score(out)
-                if abs_s is not None:
-                    self.score = abs_s
+
+                if pending == "score":
+                    # Parse score from output, then answer "no" to keep playing.
+                    abs_s = _adv_score(out)
+                    if abs_s is not None:
+                        self.score = abs_s
+                    await self._bcast("game_output", text=out)
+                    await self._send("no")
+                    out = await self._read()   # next game prompt for next iteration
+                    await self._probe()
+                elif pending == "inventory":
+                    # Parse inventory directly from this output; no extra probe needed.
+                    items = _adv_parse_inventory(out)
+                    if items is not None:
+                        self.inventory = items
+                    await self._bcast("game_output", text=out)
                 else:
-                    m = _ADV_SCORE_INC_RE.search(out)
-                    if m:
-                        self.score = (self.score or 0) + int(m.group(1))
-                await self._probe()
-                await self._bcast("game_output", text=out)
+                    # Normal AI turn: parse score and probe inventory.
+                    abs_s = _adv_score(out)
+                    if abs_s is not None:
+                        self.score = abs_s
+                    else:
+                        m = _ADV_SCORE_INC_RE.search(out)
+                        if m:
+                            self.score = (self.score or 0) + int(m.group(1))
+                    await self._probe()
+                    await self._bcast("game_output", text=out)
                 await asyncio.sleep(0.3)
 
         except asyncio.CancelledError:
-            pass
+            if self._graceful_stop and self.process and self.process.returncode is None:
+                try:
+                    await self._send("score")
+                    score_out = await asyncio.wait_for(self._read(), timeout=5.0)
+                    abs_s = _adv_score(score_out)
+                    if abs_s is not None:
+                        self.score = abs_s
+                    self.game_over = True
+                    await self._bcast("game_over", text=score_out)
+                    await self._send("yes")
+                    await asyncio.wait_for(self._read(), timeout=2.0)
+                except Exception:
+                    pass
         except Exception as e:
             await self._mgr.broadcast({"type": "error", "message": str(e)})
         finally:
@@ -2262,13 +2420,23 @@ class _AdvSession:
         return {"status": "resumed"}
 
     async def stop(self):
+        self._graceful_stop = True
+        self._run.set()   # unpause so the task is interruptible
         if self.task and not self.task.done():
             self.task.cancel()
             try: await self.task
             except asyncio.CancelledError: pass
         self.running = False
-        await self._bcast("stopped")
+        self._graceful_stop = False
+        if not self.game_over:
+            await self._bcast("stopped")
         return {"status": "stopped"}
+
+    async def queue_cmd(self, cmd: str):
+        if not self.running or self.game_over:
+            return {"status": "not_running"}
+        self._pending_cmd = cmd
+        return {"status": "queued"}
 
 
 _adv_mgr     = _AdvConnMgr()
@@ -2298,6 +2466,14 @@ async def adventure_resume():
 async def adventure_stop():
     return JSONResponse(await _adv_session.stop())
 
+@app.post("/adventure/inventory")
+async def adventure_inventory():
+    return JSONResponse(await _adv_session.queue_cmd("inventory"))
+
+@app.post("/adventure/score")
+async def adventure_score():
+    return JSONResponse(await _adv_session.queue_cmd("score"))
+
 
 @app.websocket("/adventure/ws")
 async def adventure_ws(ws: WebSocket):
@@ -2309,6 +2485,7 @@ async def adventure_ws(ws: WebSocket):
     else:
         # No history yet — send a bare state sync.
         parsed = _adv_parse_memory(_adv_session.memory)
+        parsed["inventory"] = _adv_session.inventory  # use game-sourced list
         await ws.send_text(json.dumps({
             "type": "state_sync", "turn": _adv_session.turn,
             "score": _adv_session.score, "running": _adv_session.running,
@@ -2446,6 +2623,11 @@ def _sysinfo_data() -> dict:
         "os": platform.version(),
         "apt_upgradable": _get_apt_upgradable(),
         "processes": procs[:15],
+        "claude_usage": _get_usage_stats(),
+        "visitors": [
+            {**v, **(_ip_info_cache.get(v["ip"]) or {})}
+            for v in list(_visitor_log)[:30]
+        ],
         "ts": datetime.now(ET).strftime("%H:%M:%S"),
     }
 
@@ -2461,4 +2643,82 @@ async def sysinfo_page(request: Request):
 async def sysinfo_data():
     from fastapi.responses import JSONResponse as _JSR
     data = await asyncio.get_event_loop().run_in_executor(None, _sysinfo_data)
+    return _JSR(data)
+
+
+# ---------------------------------------------------------------------------
+# Gittyup
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _git(cmd: list[str]) -> str:
+    result = subprocess.run(
+        ["git"] + cmd,
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+def _gittyup_status() -> dict:
+    status_lines = _git(["status", "--short"]).splitlines()
+    diff = _git(["diff", "HEAD"])
+    ahead_raw = _git(["rev-list", "--count", "origin/main..HEAD"]).strip()
+    try:
+        ahead = int(ahead_raw)
+    except ValueError:
+        ahead = 0
+    clean = len(status_lines) == 0 and ahead == 0
+    return {
+        "status": status_lines,
+        "diff": diff,
+        "ahead": ahead,
+        "clean": clean,
+    }
+
+
+@app.get("/gittyup", response_class=HTMLResponse)
+async def gittyup_page(request: Request, _=Depends(_require_gittyup_auth)):
+    return templates.TemplateResponse("gittyup.html", {
+        "request": request, "active": "gittyup",
+    })
+
+
+@app.get("/gittyup/status")
+async def gittyup_status(_=Depends(_require_gittyup_auth)):
+    from fastapi.responses import JSONResponse as _JSR
+    data = await asyncio.get_event_loop().run_in_executor(None, _gittyup_status)
+    return _JSR(data)
+
+
+@app.post("/gittyup/commit")
+async def gittyup_commit(request: Request, _=Depends(_require_gittyup_auth)):
+    from fastapi.responses import JSONResponse as _JSR
+    body = await request.json()
+    message = (body.get("message") or "").strip()
+    if not message:
+        return _JSR({"ok": False, "error": "Commit message is empty"}, status_code=400)
+
+    def _do_commit():
+        try:
+            _git(["add", "-A"])
+            result = subprocess.run(
+                ["git", "commit", "-m", message],
+                cwd=_REPO_ROOT, capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                return {"ok": False, "error": result.stderr.strip() or result.stdout.strip()}
+            push = subprocess.run(
+                ["git", "push", "origin", "main"],
+                cwd=_REPO_ROOT, capture_output=True, text=True,
+            )
+            if push.returncode != 0:
+                return {"ok": False, "error": push.stderr.strip() or push.stdout.strip()}
+            return {"ok": True, "output": result.stdout.strip()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    data = await asyncio.get_event_loop().run_in_executor(None, _do_commit)
     return _JSR(data)

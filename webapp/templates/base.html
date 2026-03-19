@@ -36,8 +36,8 @@
       display: flex;
       align-items: center;
       gap: 0;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--yellow);
+      background: #1a1d23;
+      border-bottom: 2px solid var(--yellow);
       padding: 0 1rem;
       height: 38px;
     }
@@ -62,7 +62,7 @@
       margin-bottom: -1px;
       transition: color 0.15s;
     }
-    nav a:hover { color: var(--text); }
+    nav a:hover { color: #ffffff; }
     nav a.active { color: var(--yellow); border-bottom-color: var(--yellow); }
 
     /* Search bar */
@@ -172,6 +172,7 @@
   <a href="/ambulance" class="{% if active == 'ambulance'  %}active{% endif %}">Ambulance</a>
   <a href="/hormuz"    class="{% if active == 'hormuz'     %}active{% endif %}">Hormuz</a>
   <a href="/adventure" class="{% if active == 'adventure'  %}active{% endif %}">Adventure</a>
+  <a href="/gittyup"   class="{% if active == 'gittyup'   %}active{% endif %}">Gittyup</a>
 </nav>
 
 {% block toolbar %}{% endblock %}

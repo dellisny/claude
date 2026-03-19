@@ -28,6 +28,10 @@ main { padding: 0; height: calc(100vh - 38px); display: flex; flex-direction: co
 .adv-btn-start:not(:disabled):hover { background: rgba(22,163,74,.1); }
 .adv-btn-pause { border-color: var(--yellow); color: var(--yellow); }
 .adv-btn-pause:not(:disabled):hover { background: rgba(217,119,6,.1); }
+.adv-btn-inv   { border-color: #60a5fa; color: #60a5fa; }
+.adv-btn-inv:not(:disabled):hover   { background: rgba(96,165,250,.1); }
+.adv-btn-score { border-color: #c084fc; color: #c084fc; }
+.adv-btn-score:not(:disabled):hover { background: rgba(192,132,252,.1); }
 .adv-btn-stop  { border-color: var(--red); color: var(--red); }
 .adv-btn-stop:not(:disabled):hover  { background: rgba(220,38,38,.1); }
 .adv-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -178,6 +182,8 @@ main { padding: 0; height: calc(100vh - 38px); display: flex; flex-direction: co
     <span id="adv-status">Idle</span>
     <button id="btn-start" class="adv-btn adv-btn-start">Start</button>
     <button id="btn-pause" class="adv-btn adv-btn-pause" disabled>Pause</button>
+    <button id="btn-inv"   class="adv-btn adv-btn-inv"   disabled>Inventory</button>
+    <button id="btn-score" class="adv-btn adv-btn-score" disabled>Score</button>
     <button id="btn-stop"  class="adv-btn adv-btn-stop"  disabled>Stop</button>
   </div>
 </div>
@@ -255,6 +261,8 @@ const logEl    = $("adv-log");
 const asc      = $("autoscroll");
 const btnStart = $("btn-start");
 const btnPause = $("btn-pause");
+const btnInv   = $("btn-inv");
+const btnScore = $("btn-score");
 const btnStop  = $("btn-stop");
 const dot      = $("adv-dot");
 const statusEl = $("adv-status");
@@ -279,6 +287,8 @@ function setStatus(running, paused, gameOver) {
   isRunning = running; isPaused = paused; isGameOver = gameOver;
   btnStart.disabled = running;
   btnPause.disabled = !running || gameOver;
+  btnInv.disabled   = !running || gameOver;
+  btnScore.disabled = !running || gameOver;
   btnStop.disabled  = !running;
   if (!running) {
     btnPause.textContent = "Pause";
@@ -485,6 +495,8 @@ btnStart.addEventListener("click", async () => {
   await post("/adventure/start");
 });
 btnPause.addEventListener("click", () => post(isPaused ? "/adventure/resume" : "/adventure/pause"));
+btnInv.addEventListener  ("click", () => post("/adventure/inventory"));
+btnScore.addEventListener("click", () => post("/adventure/score"));
 btnStop.addEventListener ("click", () => post("/adventure/stop"));
 window.addEventListener("resize", () => {
   if (sim) { const{W,H}=dims(); sim.force("center",d3.forceCenter(W/2,H/2)).alpha(0.2).restart(); }

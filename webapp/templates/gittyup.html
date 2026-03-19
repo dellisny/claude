@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Gittyup{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .gu-grid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 1rem;
+    margin-top: 0.75rem;
+  }
+  .gu-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 0.9rem 1rem;
+  }
+  .gu-card-title {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--yellow);
+    text-transform: uppercase;
+    margin-bottom: 0.65rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+  }
+
+  /* Status list */
+  .status-list { list-style: none; font-size: 12px; }
+  .status-list li { padding: 2px 0; display: flex; gap: 0.5rem; }
+  .status-code { color: var(--cyan); font-weight: 700; min-width: 18px; }
+  .status-file { color: var(--text); word-break: break-all; }
+  .status-empty { color: var(--dim); font-size: 12px; }
+
+  /* Commit area */
+  .gu-msg-wrap { margin-bottom: 0.75rem; }
+  .gu-msg-wrap label { font-size: 10px; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 0.3rem; }
+  #commit-msg {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0.4rem 0.5rem;
+    resize: vertical;
+    min-height: 54px;
+  }
+  #commit-msg:focus { outline: none; border-color: var(--yellow); }
+
+  .gu-btn {
+    background: var(--yellow);
+    color: #000;
+    border: none;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.45rem 1.2rem;
+    cursor: pointer;
+  }
+  .gu-btn:hover { opacity: 0.85; }
+  .gu-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Result banner */
+  #gu-result {
+    margin-top: 0.75rem;
+    font-size: 12px;
+    padding: 0.4rem 0.6rem;
+    display: none;
+  }
+  #gu-result.ok  { border: 1px solid var(--green);  color: var(--green); }
+  #gu-result.err { border: 1px solid var(--red);    color: var(--red); }
+
+  /* Diff */
+  .diff-wrap {
+    overflow: auto;
+    max-height: 70vh;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .diff-wrap pre { margin: 0; white-space: pre; }
+  .diff-line-add  { color: var(--green); }
+  .diff-line-del  { color: var(--red); }
+  .diff-line-hunk { color: var(--cyan); }
+  .diff-line-meta { color: var(--dim); }
+
+  /* Ahead badge */
+  .ahead-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
+    margin-left: 0.5rem;
+  }
+  .clean-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border: 1px solid var(--green);
+    color: var(--green);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">GITTYUP</div>
+
+<div class="gu-grid">
+
+  <!-- Left: status + commit -->
+  <div>
+    <div class="gu-card" style="margin-bottom:1rem">
+      <div class="gu-card-title">
+        Status
+        <span id="ahead-badge"></span>
+      </div>
+      <ul class="status-list" id="status-list">
+        <li><span class="status-empty">loading…</span></li>
+      </ul>
+    </div>
+
+    <div class="gu-card">
+      <div class="gu-card-title">Commit &amp; Push</div>
+      <div class="gu-msg-wrap">
+        <label for="commit-msg">Message</label>
+        <textarea id="commit-msg" rows="2"></textarea>
+      </div>
+      <button class="gu-btn" id="commit-btn" onclick="doCommit()">Commit &amp; Push</button>
+      <div id="gu-result"></div>
+    </div>
+  </div>
+
+  <!-- Right: diff -->
+  <div class="gu-card">
+    <div class="gu-card-title">Diff</div>
+    <div class="diff-wrap">
+      <pre id="diff-pre"><span style="color:var(--dim)">loading…</span></pre>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block footer %}&#9646; Gittyup{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function todayMsg() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `Daily sync ${yyyy}-${mm}-${dd}`;
+}
+
+function renderDiff(raw) {
+  if (!raw) return '<span style="color:var(--dim)">no changes</span>';
+  return raw.split('\n').map(line => {
+    const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    if (line.startsWith('+') && !line.startsWith('+++')) return `<span class="diff-line-add">${esc}</span>`;
+    if (line.startsWith('-') && !line.startsWith('---')) return `<span class="diff-line-del">${esc}</span>`;
+    if (line.startsWith('@@'))  return `<span class="diff-line-hunk">${esc}</span>`;
+    if (line.startsWith('diff') || line.startsWith('index') || line.startsWith('---') || line.startsWith('+++'))
+      return `<span class="diff-line-meta">${esc}</span>`;
+    return esc;
+  }).join('\n');
+}
+
+async function loadStatus() {
+  const r = await fetch('/gittyup/status');
+  const d = await r.json();
+
+  // Status list
+  const ul = document.getElementById('status-list');
+  if (d.status.length === 0) {
+    ul.innerHTML = '<li><span class="status-empty">nothing to commit</span></li>';
+  } else {
+    ul.innerHTML = d.status.map(s => {
+      const code = s.slice(0, 2).trim();
+      const file = s.slice(3);
+      return `<li><span class="status-code">${code}</span><span class="status-file">${file}</span></li>`;
+    }).join('');
+  }
+
+  // Ahead badge
+  const badge = document.getElementById('ahead-badge');
+  if (d.clean) {
+    badge.innerHTML = '<span class="clean-badge">up to date</span>';
+  } else if (d.ahead > 0) {
+    badge.innerHTML = `<span class="ahead-badge">${d.ahead} unpushed</span>`;
+  } else {
+    badge.innerHTML = '';
+  }
+
+  // Diff
+  document.getElementById('diff-pre').innerHTML = renderDiff(d.diff);
+
+  // Disable commit if nothing to do
+  document.getElementById('commit-btn').disabled = d.clean;
+}
+
+async function doCommit() {
+  const msg = document.getElementById('commit-msg').value.trim();
+  if (!msg) { alert('Commit message is empty.'); return; }
+
+  const btn = document.getElementById('commit-btn');
+  const result = document.getElementById('gu-result');
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+  result.style.display = 'none';
+
+  const r = await fetch('/gittyup/commit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: msg}),
+  });
+  const d = await r.json();
+
+  result.style.display = 'block';
+  if (d.ok) {
+    result.className = 'ok';
+    result.textContent = d.output || 'Committed and pushed.';
+    await loadStatus();
+  } else {
+    result.className = 'err';
+    result.textContent = d.error || 'Unknown error.';
+  }
+
+  btn.textContent = 'Commit & Push';
+  btn.disabled = false;
+}
+
+document.getElementById('commit-msg').value = todayMsg();
+loadStatus();
+</script>
+{% endblock %}

@@ -81,6 +81,24 @@
   .proc-table tr:hover td { background: var(--bg3); }
   .proc-table .td-name { max-width: 140px; }
 
+  /* Visitor table */
+  .visitor-table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+  .visitor-table th { color: var(--dim); text-align: left; padding: 2px 4px; font-weight: 400; font-size: 10px; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+  .visitor-table td { padding: 2px 4px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .visitor-table tr:hover td { background: var(--bg3); }
+  .visitor-table .col-ts   { width: 60px; }
+  .visitor-table .col-ip   { width: 110px; }
+  .visitor-table .col-cc   { width: 40px; }
+  .visitor-table .col-org  { width: 130px; }
+  .visitor-table .col-meth { width: 44px; }
+  .visitor-table .col-path { width: 140px; }
+  .visitor-table .col-st   { width: 44px; }
+  .visitor-table .col-ua   { width: auto; color: var(--dim); cursor: default; }
+  .status-2xx { color: var(--green); }
+  .status-3xx { color: var(--cyan); }
+  .status-4xx { color: var(--yellow); }
+  .status-5xx { color: var(--red); }
+
   /* Status bar */
   .si-status {
     display: flex;
@@ -173,6 +191,12 @@
     <div id="disk-list"></div>
   </div>
 
+  <!-- Claude Usage -->
+  <div class="si-card" id="card-claude">
+    <div class="si-card-title">Claude API Usage</div>
+    <div id="claude-usage-list"><span class="si-label">no data yet</span></div>
+  </div>
+
   <!-- Processes -->
   <div class="si-card" style="grid-column: span 2">
     <div class="si-card-title">Top Processes (by CPU)</div>
@@ -181,6 +205,24 @@
         <th>PID</th><th>Name</th><th>CPU %</th><th>Mem MB</th>
       </tr></thead>
       <tbody id="proc-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Visitors -->
+  <div class="si-card" style="grid-column: span 2">
+    <div class="si-card-title">Recent Visitors</div>
+    <table class="visitor-table">
+      <thead><tr>
+        <th class="col-ts">Time</th>
+        <th class="col-ip">IP</th>
+        <th class="col-cc">CC</th>
+        <th class="col-org">Org</th>
+        <th class="col-meth">Meth</th>
+        <th class="col-path">Path</th>
+        <th class="col-st">St</th>
+        <th class="col-ua">User-Agent</th>
+      </tr></thead>
+      <tbody id="visitor-tbody"><tr><td colspan="8" style="color:var(--dim);padding:4px">no requests yet</td></tr></tbody>
     </table>
   </div>
 
@@ -283,6 +325,27 @@ function render(d) {
     </div>`
   ).join('');
 
+  // Claude Usage
+  const cu = d.claude_usage || {};
+  const cuEl = document.getElementById('claude-usage-list');
+  const apps = Object.keys(cu);
+  if (apps.length === 0) {
+    cuEl.innerHTML = '<span class="si-label">no data yet</span>';
+  } else {
+    const appLabels = { stock_ticker: 'Stock Ticker', twenty_questions: '20 Questions', adventure: 'Adventure' };
+    cuEl.innerHTML = apps.map(app => {
+      const e = cu[app];
+      const label = appLabels[app] || app;
+      const total = e.input_tokens + e.output_tokens;
+      return `<div style="margin-bottom:0.55rem">
+        <div class="si-row"><span class="si-label">${label}</span><span class="si-val" style="color:var(--cyan);font-size:10px">${e.model}</span></div>
+        <div class="si-row"><span class="si-label">calls</span><span class="si-val">${e.calls.toLocaleString()}</span></div>
+        <div class="si-row"><span class="si-label">tokens in / out</span><span class="si-val">${e.input_tokens.toLocaleString()} / ${e.output_tokens.toLocaleString()}</span></div>
+        <div class="si-row"><span class="si-label">total tokens</span><span class="si-val">${total.toLocaleString()}</span></div>
+      </div>`;
+    }).join('<div style="border-top:1px solid var(--border);margin:0.4rem 0"></div>');
+  }
+
   // Processes
   const tbody = document.getElementById('proc-tbody');
   tbody.innerHTML = d.processes.map(p =>
@@ -293,6 +356,26 @@ function render(d) {
       <td style="color:var(--dim)">${p.mem_mb}</td>
     </tr>`
   ).join('');
+
+  // Visitors
+  const vtbody = document.getElementById('visitor-tbody');
+  if (!d.visitors || d.visitors.length === 0) {
+    vtbody.innerHTML = '<tr><td colspan="8" style="color:var(--dim);padding:4px">no requests yet</td></tr>';
+  } else {
+    const statusCls = s => s >= 500 ? 'status-5xx' : s >= 400 ? 'status-4xx' : s >= 300 ? 'status-3xx' : 'status-2xx';
+    vtbody.innerHTML = d.visitors.map(v =>
+      `<tr>
+        <td class="col-ts" style="color:var(--dim)">${v.ts}</td>
+        <td class="col-ip" style="font-weight:700" title="${v.ip || ''}">${v.ip || '?'}</td>
+        <td class="col-cc" style="color:var(--dim)">${v.country || '…'}</td>
+        <td class="col-org" style="color:var(--cyan)" title="${v.org || ''}">${v.org || '…'}</td>
+        <td class="col-meth" style="color:var(--cyan)">${v.method}</td>
+        <td class="col-path" title="${v.path}">${v.path}</td>
+        <td class="col-st ${statusCls(v.status)}" style="font-weight:700">${v.status}</td>
+        <td class="col-ua" title="${v.ua}">${v.ua}</td>
+      </tr>`
+    ).join('');
+  }
 }
 
 async function refresh() {

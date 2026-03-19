@@ -1,0 +1,14 @@
+{
+  "twenty_questions": {
+    "model": "claude-sonnet-4-6",
+    "calls": 22,
+    "input_tokens": 11424,
+    "output_tokens": 1961
+  },
+  "stock_ticker": {
+    "model": "claude-haiku-4-5-20251001",
+    "calls": 2,
+    "input_tokens": 124,
+    "output_tokens": 14
+  }
+}
