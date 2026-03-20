@@ -7,8 +7,8 @@
   },
   "stock_ticker": {
     "model": "claude-haiku-4-5-20251001",
-    "calls": 2,
-    "input_tokens": 124,
-    "output_tokens": 14
+    "calls": 195,
+    "input_tokens": 12374,
+    "output_tokens": 1134
   }
 }

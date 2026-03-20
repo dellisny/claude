@@ -10,6 +10,6 @@ fi
 exec venv/bin/gunicorn app:app \
   -k uvicorn.workers.UvicornWorker \
   -w 2 \
-  --bind 0.0.0.0:8000 \
+  --bind 127.0.0.1:8000 \
   --max-requests 500 \
   --max-requests-jitter 50
