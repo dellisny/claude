@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}{% if data %}{{ data.sym }} — {% endif %}Chart{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .ci-header {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 0.9rem 1.2rem;
+    margin-bottom: 0.9rem;
+    display: flex;
+    align-items: baseline;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+  }
+  .ci-sym   { font-size: 1.4rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+  .ci-name  { font-size: 12px; color: var(--dim); flex: 1; }
+  .ci-price { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+  .ci-chg   { font-size: 13px; font-weight: 600; }
+  .ci-chg.up   { color: var(--green); }
+  .ci-chg.down { color: var(--red); }
+  .ci-chg.flat { color: var(--dim); }
+
+  .period-bar { display: flex; gap: 0.25rem; margin-bottom: 0.75rem; }
+  .period-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 12px;
+    text-decoration: none;
+    letter-spacing: 0.05em;
+  }
+  .period-btn:hover { color: var(--text); border-color: var(--text); }
+  .period-btn.active { color: var(--yellow); border-color: var(--yellow); }
+
+  .chart-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.75rem;
+  }
+  .vol-label {
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+
+  .stats-row {
+    display: flex;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+  .stat-cell {
+    flex: 1;
+    background: var(--bg2);
+    padding: 0.55rem 0.9rem;
+  }
+  .stat-label { font-size: 10px; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; }
+  .stat-value { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 3px; }
+
+  .range-track {
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 2px;
+    margin-top: 8px;
+    position: relative;
+  }
+  .range-fill {
+    position: absolute;
+    left: 0; top: 0;
+    height: 100%;
+    background: var(--yellow);
+    border-radius: 2px;
+  }
+  .range-dot {
+    position: absolute;
+    top: -3px;
+    width: 10px; height: 10px;
+    background: var(--yellow);
+    border-radius: 50%;
+    transform: translateX(-50%);
+  }
+</style>
+{% endblock %}
+
+{% block toolbar %}
+<div class="toolbar">
+  <form method="get" action="/chart">
+    <label>SYMBOL:</label>
+    <input type="text" name="q" value="{{ query }}"
+           placeholder="CL=F, ^GSPC, BTC-USD, AAPL…"
+           autocomplete="off" style="width:230px">
+    <input type="hidden" name="period" value="{{ period }}">
+    <button type="submit">GO</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="rule">CHART</div>
+
+{% if data %}
+  {% if data.error %}
+    <div style="color:var(--red);padding:0.75rem 1rem;background:var(--bg2);border:1px solid var(--border)">
+      {{ data.error }}
+    </div>
+  {% else %}
+
+    <div class="ci-header">
+      <span class="ci-sym">{{ data.sym }}</span>
+      <span class="ci-name">{{ data.name }}</span>
+      <span class="ci-price">{{ data.price_fmt }}</span>
+      <span class="ci-chg {{ data.trend }}">{{ data.chg_fmt }}</span>
+    </div>
+
+    <div class="period-bar">
+      {% for p in periods %}
+        <a href="/chart?q={{ query }}&period={{ p }}"
+           class="period-btn {% if p == period %}active{% endif %}">{{ p.upper() }}</a>
+      {% endfor %}
+    </div>
+
+    <div class="chart-card">
+      <canvas id="priceChart" height="90"></canvas>
+    </div>
+
+    {% if data.chart and data.chart.volumes %}
+    <div class="chart-card">
+      <div class="vol-label">Volume</div>
+      <canvas id="volChart" height="28"></canvas>
+    </div>
+    {% endif %}
+
+    <div class="stats-row">
+      <div class="stat-cell">
+        <div class="stat-label">52W Low</div>
+        <div class="stat-value">{{ data.lo52_fmt }}</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">52W High</div>
+        <div class="stat-value">{{ data.hi52_fmt }}</div>
+      </div>
+      {% if data.range_pct is not none %}
+      <div class="stat-cell" style="flex:2">
+        <div class="stat-label">52W Range &nbsp; {{ data.range_pct }}%</div>
+        <div class="range-track">
+          <div class="range-fill" style="width:{{ data.range_pct }}%"></div>
+          <div class="range-dot"  style="left:{{ data.range_pct }}%"></div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script>
+    const chartData = {{ data.chart | tojson }};
+    const isUp = '{{ data.trend }}' !== 'down';
+    const lineColor = isUp ? '#16a34a' : '#dc2626';
+    const fillColor = isUp ? 'rgba(22,163,74,0.07)' : 'rgba(220,38,38,0.07)';
+
+    const commonScaleX = {
+      ticks: { color: '#9ca3af', maxTicksLimit: 8, font: { family: 'monospace', size: 10 } },
+      grid:  { color: '#eaecf0' },
+    };
+    const commonScaleY = {
+      position: 'right',
+      ticks: { color: '#9ca3af', font: { family: 'monospace', size: 10 } },
+      grid:  { color: '#eaecf0' },
+    };
+
+    new Chart(document.getElementById('priceChart'), {
+      type: 'line',
+      data: {
+        labels: chartData.dates,
+        datasets: [{
+          data: chartData.closes,
+          borderColor: lineColor,
+          backgroundColor: fillColor,
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.1,
+        }],
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: { x: commonScaleX, y: commonScaleY },
+      },
+    });
+
+    {% if data.chart.volumes %}
+    new Chart(document.getElementById('volChart'), {
+      type: 'bar',
+      data: {
+        labels: chartData.dates,
+        datasets: [{
+          data: chartData.volumes,
+          backgroundColor: 'rgba(107,114,128,0.35)',
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { display: false }, grid: { display: false } },
+          y: {
+            position: 'right',
+            ticks: {
+              color: '#9ca3af', maxTicksLimit: 3,
+              font: { family: 'monospace', size: 9 },
+              callback: v => v >= 1e9 ? (v/1e9).toFixed(1)+'B'
+                           : v >= 1e6 ? (v/1e6).toFixed(1)+'M'
+                           : v,
+            },
+            grid: { color: '#eaecf0' },
+          },
+        },
+      },
+    });
+    {% endif %}
+    </script>
+
+  {% endif %}
+{% else %}
+  <p style="color:var(--dim);font-size:12px;margin-top:1rem">
+    Enter a symbol above — e.g. <code>CL=F</code>, <code>BZ=F</code>, <code>^GSPC</code>, <code>BTC-USD</code>, <code>AAPL</code>.
+  </p>
+{% endif %}
+{% endblock %}
+
+{% block footer %}Chart data via Yahoo Finance · Prices delayed{% endblock %}

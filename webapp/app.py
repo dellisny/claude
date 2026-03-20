@@ -29,6 +29,7 @@ except ImportError:
 import threading as _threading
 
 import feedparser
+import pandas as pd
 import requests
 import yfinance as yf
 import secrets
@@ -715,6 +716,96 @@ async def stock_page(request: Request, q: Optional[str] = None, period: str = "1
 
 
 # ---------------------------------------------------------------------------
+# Chart — generic price chart for any yfinance symbol
+# ---------------------------------------------------------------------------
+
+def _fetch_chart_info(sym: str, period: str) -> dict:
+    try:
+        t = yf.Ticker(sym)
+        info = t.info
+        fi = t.fast_info
+
+        price = getattr(fi, "last_price", None)
+        prev  = getattr(fi, "previous_close", None)
+        chg_abs = (price - prev) if price and prev else None
+        chg_pct = (chg_abs / prev * 100) if chg_abs is not None and prev else None
+        trend = "flat" if chg_pct is None else ("up" if chg_pct >= 0 else "down")
+
+        lo52 = info.get("fiftyTwoWeekLow")
+        hi52 = info.get("fiftyTwoWeekHigh")
+        currency = info.get("currency", "USD")
+
+        def fmt_p(p):
+            if p is None:
+                return "—"
+            if sym == "BTC-USD":
+                return f"${p:,.0f}"
+            if currency == "USD":
+                return f"${p:,.2f}"
+            return f"{p:,.2f} {currency}"
+
+        if chg_pct is not None and chg_abs is not None:
+            sign     = "+" if chg_pct >= 0 else ""
+            abs_sign = "+" if chg_abs >= 0 else ""
+            chg_fmt = f"{abs_sign}{chg_abs:.2f}  ({sign}{chg_pct:.2f}%)"
+        else:
+            chg_fmt = "—"
+
+        range_pct = None
+        if lo52 and hi52 and price and hi52 > lo52:
+            range_pct = round((price - lo52) / (hi52 - lo52) * 100, 1)
+
+        yf_period = PERIOD_MAP.get(period, "1y")
+        raw = yf.download(sym, period=yf_period, interval="1d", auto_adjust=True, progress=False)
+
+        dates, closes, volumes = [], [], []
+        if not raw.empty:
+            close = raw["Close"]
+            volume = raw.get("Volume", None)
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            if volume is not None and isinstance(volume, pd.DataFrame):
+                volume = volume.iloc[:, 0]
+            close = close.dropna()
+            dates   = [str(d.date()) for d in close.index]
+            closes  = [round(float(v), 4) for v in close.values]
+            if volume is not None:
+                volumes = [int(v) if not pd.isna(v) else 0
+                           for v in volume.reindex(close.index).values]
+
+        return {
+            "sym":        sym,
+            "name":       info.get("longName") or info.get("shortName") or sym,
+            "price_fmt":  fmt_p(price),
+            "chg_fmt":    chg_fmt,
+            "trend":      trend,
+            "lo52_fmt":   fmt_p(lo52),
+            "hi52_fmt":   fmt_p(hi52),
+            "range_pct":  range_pct,
+            "chart":      {"dates": dates, "closes": closes, "volumes": volumes},
+            "error":      None,
+        }
+    except Exception as e:
+        return {"error": str(e), "sym": sym, "chart": None}
+
+
+@app.get("/chart", response_class=HTMLResponse)
+async def chart_page(request: Request, q: Optional[str] = None, period: str = "1y"):
+    data = None
+    if q and q.strip():
+        data = await asyncio.get_event_loop().run_in_executor(
+            None, _fetch_chart_info, q.strip().upper(), period
+        )
+    return templates.TemplateResponse("chart.html", {
+        "request": request,
+        "query":   q or "",
+        "period":  period,
+        "periods": ["1m", "3m", "6m", "1y", "2y", "5y"],
+        "data":    data,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Market Dashboard
 # ---------------------------------------------------------------------------
 
@@ -726,6 +817,7 @@ DASHBOARD_INDICES = [
     {"sym": "^VIX",    "label": "VIX"},
     {"sym": "GC=F",    "label": "Gold"},
     {"sym": "CL=F",    "label": "WTI Oil"},
+    {"sym": "BZ=F",    "label": "Brent Oil"},
     {"sym": "BTC-USD", "label": "Bitcoin"},
 ]
 
@@ -775,7 +867,7 @@ def _fmt_idx_price(sym: str, price: float | None) -> str:
         return "—"
     if sym == "BTC-USD":
         return f"${price:,.0f}"
-    if sym in ("GC=F", "CL=F"):
+    if sym in ("GC=F", "CL=F", "BZ=F"):
         return f"${price:,.2f}"
     return f"{price:,.2f}"
 

@@ -160,7 +160,7 @@
 <!-- Indices: rendered immediately server-side -->
 <div class="indices-strip">
   {% for idx in indices %}
-  <a class="idx-tile" href="/stock?q={{ idx.sym }}">
+  <a class="idx-tile" href="/chart?q={{ idx.sym }}">
     <span class="idx-label">{{ idx.label }}</span>
     <span class="idx-price">{{ idx.price }}</span>
     <span class="idx-chg {{ idx.trend }}">{{ idx.chg }}</span>
