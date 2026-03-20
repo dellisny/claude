@@ -7,6 +7,8 @@ if [ -f .env ]; then
   source .env
   set +a
 fi
+export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=no"
+
 exec venv/bin/gunicorn app:app \
   -k uvicorn.workers.UvicornWorker \
   -w 2 \
