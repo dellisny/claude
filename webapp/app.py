@@ -2814,3 +2814,148 @@ async def gittyup_commit(request: Request, _=Depends(_require_gittyup_auth)):
 
     data = await asyncio.get_event_loop().run_in_executor(None, _do_commit)
     return _JSR(data)
+
+
+# ---------------------------------------------------------------------------
+# Minor Cay — house task tracker
+# ---------------------------------------------------------------------------
+
+import toml as _toml
+import uuid as _uuid
+import threading as _mc_lock_mod
+
+_MC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "minorcay_tasks.toml")
+_MC_LOCK = _mc_lock_mod.Lock()
+
+
+def _mc_load() -> list[dict]:
+    try:
+        data = _toml.loads(open(_MC_FILE).read())
+        return data.get("tasks", [])
+    except (FileNotFoundError, Exception):
+        return []
+
+
+def _mc_save(tasks: list[dict]) -> None:
+    os.makedirs(os.path.dirname(_MC_FILE), exist_ok=True)
+    with open(_MC_FILE, "w") as f:
+        _toml.dump({"tasks": tasks}, f)
+
+
+@app.get("/minorcay", response_class=HTMLResponse)
+async def minorcay_page(request: Request):
+    return templates.TemplateResponse("minorcay.html", {"request": request, "active": "minorcay"})
+
+
+@app.get("/minorcay/tasks")
+async def minorcay_get_tasks():
+    from fastapi.responses import JSONResponse as _JSR
+    with _MC_LOCK:
+        tasks = _mc_load()
+    return _JSR(tasks)
+
+
+@app.post("/minorcay/tasks")
+async def minorcay_add_task(request: Request):
+    from fastapi.responses import JSONResponse as _JSR
+    body = await request.json()
+    task = {
+        "id":           str(_uuid.uuid4()),
+        "creator":      str(body.get("creator") or ""),
+        "name":         str(body.get("name") or "").strip(),
+        "description":  str(body.get("description") or "").strip(),
+        "status":       str(body.get("status") or "New"),
+        "created_at":   datetime.now(timezone.utc).isoformat(),
+        "completed_at": "",
+    }
+    if not task["name"]:
+        return _JSR({"error": "name required"}, status_code=400)
+    with _MC_LOCK:
+        tasks = _mc_load()
+        tasks.insert(0, task)
+        _mc_save(tasks)
+    return _JSR(task)
+
+
+@app.patch("/minorcay/tasks/{task_id}")
+async def minorcay_update_task(task_id: str, request: Request):
+    from fastapi.responses import JSONResponse as _JSR
+    body = await request.json()
+    with _MC_LOCK:
+        tasks = _mc_load()
+        for i, t in enumerate(tasks):
+            if t["id"] == task_id:
+                new_status = body.get("status")
+                promote = False
+                if new_status:
+                    was_done = t["status"] == "Complete"
+                    now_done = new_status == "Complete"
+                    t["status"] = new_status
+                    if now_done and not was_done:
+                        t["completed_at"] = datetime.now(timezone.utc).isoformat()
+                    elif not now_done and was_done:
+                        t["completed_at"] = ""
+                    if not now_done:
+                        promote = True
+                if "name" in body:        t["name"]        = str(body["name"]).strip()
+                if "description" in body: t["description"] = str(body["description"]).strip()
+                if promote and i != 0:
+                    tasks.pop(i)
+                    tasks.insert(0, t)
+                _mc_save(tasks)
+                return _JSR(t)
+    return _JSR({"error": "not found"}, status_code=404)
+
+
+@app.delete("/minorcay/tasks/{task_id}")
+async def minorcay_delete_task(task_id: str):
+    from fastapi.responses import JSONResponse as _JSR
+    with _MC_LOCK:
+        tasks = _mc_load()
+        tasks = [t for t in tasks if t["id"] != task_id]
+        _mc_save(tasks)
+    return _JSR({"ok": True})
+
+
+@app.post("/minorcay/tasks/{task_id}/updates")
+async def minorcay_add_update(task_id: str, request: Request):
+    from fastapi.responses import JSONResponse as _JSR
+    body = await request.json()
+    text = str(body.get("text") or "").strip()
+    if not text:
+        return _JSR({"error": "text required"}, status_code=400)
+    update = {
+        "author":     str(body.get("author") or ""),
+        "text":       text,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _MC_LOCK:
+        tasks = _mc_load()
+        for i, t in enumerate(tasks):
+            if t["id"] == task_id:
+                if "updates" not in t or not isinstance(t["updates"], list):
+                    t["updates"] = []
+                t["updates"].append(update)
+                if t.get("status") != "Complete" and i != 0:
+                    tasks.pop(i)
+                    tasks.insert(0, t)
+                _mc_save(tasks)
+                return _JSR(update)
+    return _JSR({"error": "not found"}, status_code=404)
+
+
+@app.delete("/minorcay/tasks/{task_id}/updates/{update_idx}")
+async def minorcay_delete_update(task_id: str, update_idx: int):
+    from fastapi.responses import JSONResponse as _JSR
+    with _MC_LOCK:
+        tasks = _mc_load()
+        for t in tasks:
+            if t["id"] == task_id:
+                updates = t.get("updates", [])
+                if 0 <= update_idx < len(updates):
+                    updates.pop(update_idx)
+                    t["updates"] = updates
+                    _mc_save(tasks)
+                    return _JSR({"ok": True})
+                return _JSR({"error": "index out of range"}, status_code=404)
+    return _JSR({"error": "not found"}, status_code=404)

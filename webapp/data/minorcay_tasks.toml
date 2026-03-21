@@ -1,0 +1,169 @@
+[[tasks]]
+id = "c421fce1-5f0b-47af-8781-57f2949bfd97"
+creator = "Doug"
+name = "Outdoor Canopies"
+description = ""
+status = "In Progress"
+created_at = "2026-03-21T21:11:40.811358+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "New white ones to replace worn pink ones. Also, refitting of to floor white ones."
+created_at = "2026-03-21T21:20:34.349552+00:00"
+
+
+[[tasks]]
+id = "b78a507b-7af3-46df-8a7f-b7547914ee39"
+creator = "Doug"
+name = "Pool Heaters"
+description = "Both GG and Doug agreed we should proceed very slowly with the Pool Heaters install. The electrician's plumber was concerned at some of the pipe work and has called in an expert for advice. Today the electrician reports that he is unhappy with the voltage at the pool house - He is investigating and liaising with BPL."
+status = "In Progress"
+created_at = "2026-03-21T21:11:09.803182+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "f474ca35-ca07-4cd3-ac05-737730b2e48b"
+creator = "Doug"
+name = "Deep Cleaning"
+description = "Amanda brought up the possibility of deep cleaning. Kay to organise deep cleaning of top floor living area after Bliss has departed?"
+status = "New"
+created_at = "2026-03-21T21:10:33.040520+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "I think more than top floor may need this…"
+created_at = "2026-03-21T21:10:49.168374+00:00"
+
+
+[[tasks]]
+id = "509a8d91-4eb2-43d1-a4b9-5947919d668f"
+creator = "Doug"
+name = "Storage Organization"
+description = "Doug asked Kay for her organizational skills in the basement"
+status = "New"
+created_at = "2026-03-21T21:09:51.257163+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "82028fb3-9062-41d8-878c-f592caee17cb"
+creator = "Doug"
+name = "Cart: Minor Cay II"
+description = "Doug ordered a new gold cart approximately two years ago and it has never run properly, this has only been noticed when the family are in residence as when Karl runs it - he must not give it enough use to see the battery fade.  Several complaints have been made but the supplier has either suggested we are not looking after batteries, or it has not been charged properly. Now Doug has yet another invoice for picking up the cart and saying we need to charge it. GG to write a note to the supplier asking for replacement batteries at a reduced cost to settle the issue. Done 5th March 2026."
+status = "In Progress"
+created_at = "2026-03-21T21:09:20.416798+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "a88b584a-e10b-4617-baa1-57de370e8ed4"
+creator = "Doug"
+name = "\u2060Kitchen cabinet magnet"
+description = "Adhesive has worn. Needs screws."
+status = "New"
+created_at = "2026-03-21T21:08:33.950497+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "371f6197-dc4b-48a6-a1d3-fe6cc8076e63"
+creator = "Doug"
+name = "Tilting Dishwasher"
+description = "This will most likely require the dishwasher screwing back into cabinets or feet adjusting - I can do this today if needed or when you leave? Plumber is on site today - have asked him to take a look."
+status = "New"
+created_at = "2026-03-21T21:07:35.232808+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "0db41d00-75b3-4540-bbe4-783c53f4c822"
+creator = "Doug"
+name = "Hard Water"
+description = "Doug reported the dishwasher has been showing signs of calcium build up - GG research dif GE Dishwashers have a built in water softener. GG asked Kelson of Tair plumbing to test the water for hardness. If it is hard we could review installing whole house water softener or specific in line device just for the dishwasher"
+status = "In Progress"
+created_at = "2026-03-21T21:06:32.187084+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "I just want to make sure we don’t reduce water pressure furhter"
+created_at = "2026-03-21T21:06:59.174177+00:00"
+
+
+[[tasks]]
+id = "39f46ed9-40f1-4064-a273-787043b2b4e5"
+creator = "Doug"
+name = "Motion controlled light"
+description = "Motion controlled light by car shed needs adjustment/repair"
+status = "New"
+created_at = "2026-03-21T19:47:36.094955+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "a4b98845-0139-4238-a2ba-ef10abb7776b"
+creator = "Doug"
+name = "Welcome Bliss"
+description = ""
+status = "Complete"
+created_at = "2026-03-21T19:27:09.966162+00:00"
+completed_at = "2026-03-21T19:27:13.715618+00:00"
+
+[[tasks]]
+id = "75131ce2-8a8a-48a1-8c91-198ba1b3e650"
+creator = "Doug"
+name = "Water heater for Master Bath"
+description = "Let’s see if the inline water heater speeds water heating…"
+status = "In Progress"
+created_at = "2026-03-21T19:13:18.611801+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "Water heats quickly. Pressure is pretty good."
+created_at = "2026-03-21T19:14:03.496427+00:00"
+
+
+[[tasks]]
+id = "c05aeda9-a349-4796-9f1c-145e866c192e"
+creator = "Doug"
+name = "Orchids?"
+description = "Amanda asked Ramon about this, but I don't tbink he has replied."
+status = "New"
+created_at = "2026-03-21T19:12:55.409129+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "d3137e17-92be-4104-b6c0-d50ae7822ddc"
+creator = "Doug"
+name = "A couple of the new Bougainvillea plants have not thrived"
+description = ""
+status = "New"
+created_at = "2026-03-21T19:12:22.007029+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "e3f16ad2-911d-4254-9f90-061a689a42ec"
+creator = "Doug"
+name = "Concrete Lid Mystery"
+description = "Why is the concrete lid off again by the pool?"
+status = "New"
+created_at = "2026-03-21T19:11:27.618253+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "ff758859-a33e-4d63-b7b8-fd382f761392"
+creator = "Doug"
+name = "Warped Trash Lid"
+description = "The trash lid is warped"
+status = "New"
+created_at = "2026-03-21T19:07:06.285966+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "842ad419-c8ca-42e4-b641-5b0a782d4a19"
+creator = "Doug"
+name = "Protect pipes by the tanks"
+description = "The water and gas pipes are exposed and should be protected."
+status = "In Progress"
+created_at = "2026-03-21T19:06:14.587133+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "Garry says this is in the works."
+created_at = "2026-03-21T21:15:13.681230+00:00"
+
+

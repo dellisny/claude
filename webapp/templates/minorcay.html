@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Minor Cay</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #f6f3ee;
+      --card:     #ffffff;
+      --border:   #e0dbd2;
+      --text:     #2c2822;
+      --dim:      #8a8278;
+      --teal:     #2a7a6d;
+      --teal-dk:  #1d5c52;
+      --teal-lt:  #e6f2f0;
+      --amber:    #c97d12;
+      --amber-lt: #fdf3e3;
+      --new:      #2563c7;
+      --new-lt:   #eff4ff;
+      --prog:     #c97d12;
+      --prog-lt:  #fef3e2;
+      --hold:     #7047bc;
+      --hold-lt:  #f4f0fb;
+      --done:     #2a7a6d;
+      --done-lt:  #e6f2f0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100vh;
+      padding-bottom: 3rem;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: var(--teal-dk);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal-box {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      max-width: 360px; width: 90%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+    .modal-box .cay-logo {
+      font-size: 2rem;
+      margin-bottom: 0.25rem;
+    }
+    .modal-box h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--teal-dk);
+      letter-spacing: -0.02em;
+    }
+    .modal-box p {
+      color: var(--dim);
+      margin: 0.5rem 0 1.5rem;
+      font-size: 1rem;
+    }
+    .user-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .user-btn {
+      background: var(--bg);
+      border: 2px solid var(--border);
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.75rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.02em;
+    }
+    .user-btn:hover, .user-btn:active {
+      background: var(--teal-lt);
+      border-color: var(--teal);
+      color: var(--teal-dk);
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--teal-dk);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.9rem 1.2rem;
+    }
+    .header-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .header-title .icon { font-size: 1.1rem; }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+    }
+    .user-name {
+      color: rgba(255,255,255,0.9);
+      font-weight: 600;
+    }
+    .change-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.35);
+      color: rgba(255,255,255,0.7);
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .change-btn:hover { border-color: rgba(255,255,255,0.7); color: white; }
+
+    /* ── Add task bar ── */
+    .add-bar {
+      padding: 1rem 1.2rem 0.5rem;
+    }
+    .add-task-btn {
+      background: var(--teal);
+      color: white;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 0.65rem 1.2rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .add-task-btn:hover { background: var(--teal-dk); }
+
+    /* ── Task form ── */
+    .task-form {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.2rem;
+      margin: 0.5rem 1.2rem 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .task-form.hidden { display: none; }
+    .task-form label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.3rem;
+    }
+    .task-form input[type=text],
+    .task-form textarea,
+    .task-form select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      margin-bottom: 0.85rem;
+      outline: none;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+    .task-form textarea { height: 80px; resize: vertical; }
+    .task-form input[type=text]:focus,
+    .task-form textarea:focus,
+    .task-form select:focus { border-color: var(--teal); }
+    .form-actions {
+      display: flex;
+      gap: 0.6rem;
+    }
+    .btn-save {
+      background: var(--teal);
+      color: white;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.6rem 1.2rem;
+      border-radius: 7px;
+      cursor: pointer;
+      flex: 1;
+      transition: background 0.15s;
+    }
+    .btn-save:hover { background: var(--teal-dk); }
+    .btn-cancel {
+      background: transparent;
+      color: var(--dim);
+      border: 1px solid var(--border);
+      font-size: 0.9rem;
+      padding: 0.6rem 1rem;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-cancel:hover { border-color: var(--dim); color: var(--text); }
+
+    /* ── Main content ── */
+    main { padding: 0 1.2rem; }
+
+    .section-head {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--dim);
+      padding: 0.75rem 0 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-head::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .section-head .count {
+      background: var(--border);
+      color: var(--dim);
+      font-size: 0.7rem;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+
+    /* ── Task card ── */
+    .task-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 0.6rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+      transition: box-shadow 0.15s;
+    }
+    .task-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .task-card.completed {
+      opacity: 0.7;
+      background: #fafaf8;
+    }
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      margin-bottom: 0.35rem;
+    }
+    .card-top .task-name {
+      font-weight: 600;
+      font-size: 0.98rem;
+      flex: 1;
+      line-height: 1.3;
+    }
+    .task-card.completed .task-name {
+      text-decoration: line-through;
+      color: var(--dim);
+    }
+    .task-desc {
+      font-size: 0.85rem;
+      color: var(--dim);
+      margin-bottom: 0.6rem;
+      line-height: 1.45;
+    }
+    .card-footer {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .creator-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--dim);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+    .completed-date {
+      font-size: 0.72rem;
+      color: var(--dim);
+      margin-left: auto;
+    }
+
+    /* Status select */
+    .status-select {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 7px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      outline: none;
+      -webkit-appearance: none;
+      font-family: inherit;
+    }
+    .status-select.s-new      { background: var(--new-lt);  color: var(--new); }
+    .status-select.s-inprog   { background: var(--prog-lt); color: var(--prog); }
+    .status-select.s-hold     { background: var(--hold-lt); color: var(--hold); }
+    .status-select.s-complete { background: var(--done-lt); color: var(--done); }
+
+    .delete-btn {
+      background: transparent;
+      border: none;
+      color: #ccc;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 2px 4px;
+      line-height: 1;
+      margin-left: auto;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .delete-btn:hover { color: #e53e3e; }
+
+    .empty-state {
+      text-align: center;
+      color: var(--dim);
+      font-size: 0.85rem;
+      padding: 1.5rem 0;
+    }
+
+    /* ── Updates ── */
+    .updates-list {
+      margin: 0.5rem 0 0.4rem;
+      border-left: 2px solid var(--border);
+      padding-left: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .update-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.4rem;
+    }
+    .update-meta {
+      font-size: 0.7rem;
+      color: var(--dim);
+      white-space: nowrap;
+      padding-top: 1px;
+      flex-shrink: 0;
+    }
+    .update-text {
+      font-size: 0.82rem;
+      color: var(--text);
+      line-height: 1.4;
+      flex: 1;
+    }
+    .update-del {
+      background: transparent;
+      border: none;
+      color: #ddd;
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color 0.12s;
+    }
+    .update-del:hover { color: #e53e3e; }
+    .add-update-row {
+      margin-top: 0.5rem;
+    }
+    .add-update-toggle {
+      background: transparent;
+      border: none;
+      color: var(--teal);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      letter-spacing: 0.02em;
+    }
+    .add-update-toggle:hover { text-decoration: underline; }
+    .add-update-form {
+      display: none;
+      margin-top: 0.4rem;
+      gap: 0.4rem;
+      align-items: flex-start;
+    }
+    .add-update-form.open { display: flex; }
+    .add-update-form textarea {
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.82rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      resize: none;
+      height: 58px;
+      outline: none;
+      -webkit-appearance: none;
+      transition: border-color 0.15s;
+    }
+    .add-update-form textarea:focus { border-color: var(--teal); }
+    .add-update-form button {
+      background: var(--teal);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      align-self: flex-end;
+      transition: background 0.15s;
+    }
+    .add-update-form button:hover { background: var(--teal-dk); }
+
+    @media (min-width: 600px) {
+      header { padding: 1rem 2rem; }
+      .add-bar { padding: 1.2rem 2rem 0.6rem; }
+      .task-form { margin: 0.5rem 2rem 1rem; }
+      main { padding: 0 2rem; max-width: 720px; margin: 0 auto; }
+      .add-bar { max-width: 720px; margin: 0 auto; padding: 1.2rem 0 0.6rem; }
+      .task-form { max-width: 720px; margin: 0.5rem auto 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- User picker modal -->
+<div id="user-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="cay-logo">⚓</div>
+    <h1>Minor Cay</h1>
+    <p>Who are you?</p>
+    <div class="user-buttons">
+      <button class="user-btn" onclick="selectUser('Doug')">Doug</button>
+      <button class="user-btn" onclick="selectUser('Amanda')">Amanda</button>
+      <button class="user-btn" onclick="selectUser('Garry')">Garry</button>
+      <button class="user-btn" onclick="selectUser('Kay')">Kay</button>
+      <button class="user-btn" onclick="selectUser('Rose')">Rose</button>
+      <button class="user-btn" onclick="selectUser('Bliss')">Bliss</button>
+      <button class="user-btn" onclick="selectUser('Other')">Other</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="header-title">
+    <span class="icon">⚓</span> Minor Cay
+  </div>
+  <div class="header-user">
+    <span class="user-name" id="user-display"></span>
+    <button class="change-btn" onclick="changeUser()">change user</button>
+  </div>
+</header>
+
+<!-- Add task -->
+<div class="add-bar">
+  <button class="add-task-btn" id="add-btn" onclick="toggleForm()">
+    <span>＋</span> Add Task
+  </button>
+</div>
+
+<!-- Task form -->
+<div class="task-form hidden" id="task-form">
+  <label for="f-name">Task Name</label>
+  <input type="text" id="f-name" placeholder="What needs doing?" autocomplete="off">
+  <label for="f-desc">Description</label>
+  <textarea id="f-desc" placeholder="Any details…"></textarea>
+  <label for="f-status">Status</label>
+  <select id="f-status">
+    <option value="New">New</option>
+    <option value="In Progress">In Progress</option>
+    <option value="Hold">Hold</option>
+  </select>
+  <div class="form-actions">
+    <button class="btn-save" onclick="submitTask()">Add Task</button>
+    <button class="btn-cancel" onclick="toggleForm()">Cancel</button>
+  </div>
+</div>
+
+<!-- Main content -->
+<main>
+  <div class="section-head">
+    Active <span class="count" id="active-count">0</span>
+  </div>
+  <div id="active-tasks"></div>
+
+  <div class="section-head" style="margin-top:1rem;">
+    Completed <span class="count" id="done-count">0</span>
+  </div>
+  <div id="completed-tasks"></div>
+</main>
+
+<script>
+// ── Cookie helpers ──
+function setCookie(name, value, days) {
+  const exp = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)};expires=${exp};path=/`;
+}
+function getCookie(name) {
+  const m = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function deleteCookie(name) {
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+}
+
+// ── User management ──
+let currentUser = null;
+
+function selectUser(name) {
+  setCookie('minorcay_user', name, 365);
+  currentUser = name;
+  document.getElementById('user-display').textContent = name;
+  document.getElementById('user-modal').classList.add('hidden');
+}
+
+function changeUser() {
+  deleteCookie('minorcay_user');
+  currentUser = null;
+  document.getElementById('user-modal').classList.remove('hidden');
+}
+
+function initUser() {
+  const saved = getCookie('minorcay_user');
+  if (saved) {
+    currentUser = saved;
+    document.getElementById('user-display').textContent = saved;
+    document.getElementById('user-modal').classList.add('hidden');
+  }
+}
+
+// ── Task form ──
+function toggleForm() {
+  const form = document.getElementById('task-form');
+  const btn  = document.getElementById('add-btn');
+  const open = !form.classList.contains('hidden');
+  form.classList.toggle('hidden');
+  btn.innerHTML = open ? '<span>＋</span> Add Task' : '<span>✕</span> Cancel';
+  if (!open) document.getElementById('f-name').focus();
+}
+
+async function submitTask() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { document.getElementById('f-name').focus(); return; }
+  const desc   = document.getElementById('f-desc').value.trim();
+  const status = document.getElementById('f-status').value;
+  const resp = await fetch('/minorcay/tasks', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ creator: currentUser, name, description: desc, status }),
+  });
+  if (resp.ok) {
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-desc').value = '';
+    document.getElementById('f-status').value = 'New';
+    toggleForm();
+    loadTasks();
+  }
+}
+
+// ── Status select styling ──
+function statusClass(s) {
+  if (s === 'New')         return 's-new';
+  if (s === 'In Progress') return 's-inprog';
+  if (s === 'Hold')        return 's-hold';
+  if (s === 'Complete')    return 's-complete';
+  return '';
+}
+
+async function updateStatus(id, newStatus) {
+  await fetch(`/minorcay/tasks/${id}`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ status: newStatus }),
+  });
+  loadTasks();
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+  await fetch(`/minorcay/tasks/${id}`, { method: 'DELETE' });
+  loadTasks();
+}
+
+// ── Render ──
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function renderUpdates(task) {
+  const updates = task.updates || [];
+  const list = updates.map((u, i) => `
+    <div class="update-item">
+      <span class="update-meta">${escHtml(u.author || '?')} · ${fmtDate(u.created_at)}</span>
+      <span class="update-text">${escHtml(u.text)}</span>
+      <button class="update-del" onclick="deleteUpdate('${task.id}', ${i})" title="Remove">✕</button>
+    </div>`).join('');
+  return `
+    ${updates.length ? `<div class="updates-list">${list}</div>` : ''}
+    <div class="add-update-row">
+      <button class="add-update-toggle" onclick="toggleUpdateForm('${task.id}')">+ add update</button>
+      <div class="add-update-form" id="uf-${task.id}">
+        <textarea id="ut-${task.id}" placeholder="What's the latest?"></textarea>
+        <button onclick="submitUpdate('${task.id}')">Save</button>
+      </div>
+    </div>`;
+}
+
+function toggleUpdateForm(taskId) {
+  const form = document.getElementById(`uf-${taskId}`);
+  const open = form.classList.toggle('open');
+  if (open) document.getElementById(`ut-${taskId}`).focus();
+}
+
+async function submitUpdate(taskId) {
+  const ta = document.getElementById(`ut-${taskId}`);
+  const text = ta.value.trim();
+  if (!text) { ta.focus(); return; }
+  await fetch(`/minorcay/tasks/${taskId}/updates`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ author: currentUser, text }),
+  });
+  loadTasks();
+}
+
+async function deleteUpdate(taskId, idx) {
+  if (!confirm('Delete this update?')) return;
+  await fetch(`/minorcay/tasks/${taskId}/updates/${idx}`, { method: 'DELETE' });
+  loadTasks();
+}
+
+function renderCard(task, isCompleted) {
+  const sc = statusClass(task.status);
+  const opts = ['New','In Progress','Hold','Complete'].map(s =>
+    `<option value="${s}"${s === task.status ? ' selected' : ''}>${s}</option>`
+  ).join('');
+  const doneDate = isCompleted && task.completed_at
+    ? `<span class="completed-date">done ${fmtDate(task.completed_at)}</span>` : '';
+  return `
+    <div class="task-card${isCompleted ? ' completed' : ''}">
+      <div class="card-top">
+        <span class="task-name">${escHtml(task.name)}</span>
+        <button class="delete-btn" onclick="deleteTask('${task.id}')" title="Delete">✕</button>
+      </div>
+      ${task.description ? `<div class="task-desc">${escHtml(task.description)}</div>` : ''}
+      ${renderUpdates(task)}
+      <div class="card-footer" style="margin-top:0.5rem;">
+        <span class="creator-badge">${escHtml(task.creator || '?')}</span>
+        <select class="status-select ${sc}" onchange="updateStatus('${task.id}', this.value)"
+                oninput="this.className='status-select '+statusClass(this.value)">
+          ${opts}
+        </select>
+        ${doneDate}
+      </div>
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadTasks() {
+  const resp = await fetch('/minorcay/tasks');
+  const data = await resp.json();
+  const active    = data.filter(t => t.status !== 'Complete');
+  const completed = data.filter(t => t.status === 'Complete')
+    .sort((a, b) => new Date(b.completed_at || 0) - new Date(a.completed_at || 0));
+
+  document.getElementById('active-count').textContent = active.length;
+  document.getElementById('done-count').textContent   = completed.length;
+
+  const activeEl = document.getElementById('active-tasks');
+  const doneEl   = document.getElementById('completed-tasks');
+
+  activeEl.innerHTML = active.length
+    ? active.map(t => renderCard(t, false)).join('')
+    : '<div class="empty-state">No active tasks — all clear! 🌴</div>';
+
+  doneEl.innerHTML = completed.length
+    ? completed.map(t => renderCard(t, true)).join('')
+    : '<div class="empty-state">Nothing completed yet.</div>';
+}
+
+// ── Enter key in name field ──
+document.addEventListener('DOMContentLoaded', () => {
+  initUser();
+  loadTasks();
+  document.getElementById('f-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitTask();
+  });
+});
+</script>
+</body>
+</html>
