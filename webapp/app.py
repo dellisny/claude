@@ -2891,7 +2891,7 @@ async def sysinfo_reset_usage():
 # Gittyup
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_GIT_SSH_CMD = f"ssh -i {os.path.expanduser('~/.ssh/id_ed25519')} -o StrictHostKeyChecking=no"
+_GIT_SSH_CMD = f"ssh -i {os.path.expanduser('~/.ssh/id_ed25519_deploy')} -o StrictHostKeyChecking=no"
 _GIT_ENV = {**os.environ, "GIT_SSH_COMMAND": _GIT_SSH_CMD}
 
 
