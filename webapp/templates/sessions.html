@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% set active = "sessions" %}
+{% block title %}Sessions{% endblock %}
+
+{% block extra_styles %}
+<style>
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    text-align: left;
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    padding: 4px 8px;
+  }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .ua {
+    color: var(--dim);
+    font-size: 11px;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn-revoke {
+    background: transparent;
+    border: 1px solid var(--red);
+    color: var(--red);
+    font-family: inherit;
+    font-size: 10px;
+    padding: 3px 8px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .btn-revoke:hover { background: rgba(220,38,38,0.08); }
+  .actions { display: flex; gap: 1.5rem; align-items: flex-start; margin-top: 1.5rem; flex-wrap: wrap; }
+  .action-box {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 1rem;
+  }
+  .action-box h3 {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+  .action-box input[type=password] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 5px 8px;
+    outline: none;
+    width: 200px;
+  }
+  .action-box input:focus { border-color: var(--yellow); }
+  .btn-yellow {
+    background: transparent;
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
+    font-family: inherit;
+    font-size: 10px;
+    padding: 5px 12px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-left: 0.5rem;
+  }
+  .btn-yellow:hover { background: rgba(217,119,6,0.08); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">ACTIVE SESSIONS</div>
+
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>IP</th>
+      <th>User Agent</th>
+      <th>Created</th>
+      <th>TTL</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.ip }}</td>
+      <td class="ua" title="{{ r.user_agent }}">{{ r.user_agent }}</td>
+      <td>{{ r.created }}</td>
+      <td>{{ r.ttl }}</td>
+      <td>
+        <form method="post" action="/sessions/revoke/{{ r.token }}">
+          <button class="btn-revoke" type="submit">Revoke</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <div style="color:var(--dim);font-size:12px;margin-top:1rem;">No active sessions.</div>
+{% endif %}
+
+<div class="actions">
+  <div class="action-box">
+    <h3>Revoke All</h3>
+    <form method="post" action="/sessions/revoke-all"
+          onsubmit="return confirm('Revoke all sessions? Everyone will need to log in again.')">
+      <button class="btn-revoke" type="submit">Revoke All</button>
+    </form>
+  </div>
+
+  <div class="action-box">
+    <h3>Change Passphrase</h3>
+    <form method="post" action="/sessions/change-pass" style="display:flex;align-items:center;">
+      <input type="password" name="new_pass" placeholder="new passphrase" required>
+      <button class="btn-yellow" type="submit">Update</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

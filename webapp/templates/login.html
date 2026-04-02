@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f4f5f7; --bg2: #ffffff; --border: #d1d5db;
+      --text: #111827; --dim: #6b7280; --yellow: #d97706; --red: #dc2626;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "JetBrains Mono", "Fira Mono", "Consolas", "Courier New", monospace;
+      font-size: 13px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      padding: 2rem;
+      width: 320px;
+    }
+    .brand {
+      color: var(--yellow);
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.12em;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    label {
+      display: block;
+      color: var(--dim);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    input[type=text], input[type=password] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 7px 10px;
+      outline: none;
+      margin-bottom: 1rem;
+    }
+    input:focus { border-color: var(--yellow); }
+    button {
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--yellow);
+      color: var(--yellow);
+      font-family: inherit;
+      font-size: 11px;
+      padding: 8px;
+      cursor: pointer;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    button:hover { background: rgba(217,119,6,0.08); }
+    .error {
+      color: var(--red);
+      font-size: 12px;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">&#9646; DASHBOARD</div>
+  {% if error %}
+    <div class="error">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Name</label>
+    <input type="text" name="name" autocomplete="off" autofocus required>
+    <label>Passphrase</label>
+    <input type="password" name="passphrase" required>
+    <button type="submit">Enter</button>
+  </form>
+</div>
+</body>
+</html>

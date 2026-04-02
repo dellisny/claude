@@ -33,9 +33,8 @@ import pandas as pd
 import requests
 import yfinance as yf
 import secrets
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -43,17 +42,6 @@ app = FastAPI(title="Dashboard")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-_basic = HTTPBasic()
-_GITTYUP_USER = os.environ.get("GITTYUP_USER", "admin")
-_GITTYUP_PASS = os.environ.get("GITTYUP_PASS", "changeme")
-
-def _require_gittyup_auth(creds: HTTPBasicCredentials = Depends(_basic)):
-    ok = (
-        secrets.compare_digest(creds.username.encode(), _GITTYUP_USER.encode()) and
-        secrets.compare_digest(creds.password.encode(), _GITTYUP_PASS.encode())
-    )
-    if not ok:
-        raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Basic realm=\"gittyup\""}, detail="Unauthorized")
 
 # ---------------------------------------------------------------------------
 # Visitor log + IP info
@@ -110,6 +98,136 @@ async def _log_visitors(request: Request, call_next):
     return response
 
 ET = ZoneInfo("America/New_York")
+
+# ---------------------------------------------------------------------------
+# Site auth — cookie session gate
+# ---------------------------------------------------------------------------
+
+_SESSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sessions.json")
+_SESSIONS_LOCK = _threading.Lock()
+_SESSION_TTL   = 30 * 24 * 3600          # 30 days in seconds
+_SITE_PASS     = os.environ.get("SITE_PASS", "")
+_ENV_FILE      = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+_AUTH_SKIP        = {"/login", "/favicon.svg", "/favicon.ico"}
+_AUTH_SKIP_PREFIX = "/static"
+
+
+def _sess_load() -> dict:
+    try:
+        with open(_SESSIONS_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _sess_save(sessions: dict) -> None:
+    os.makedirs(os.path.dirname(_SESSIONS_FILE), exist_ok=True)
+    with open(_SESSIONS_FILE, "w") as f:
+        json.dump(sessions, f, indent=2)
+
+
+def _sess_prune(sessions: dict) -> dict:
+    now = time.time()
+    return {k: v for k, v in sessions.items() if v["expires_at"] > now}
+
+
+@app.middleware("http")
+async def _site_auth(request: Request, call_next):
+    path = request.url.path
+    if path in _AUTH_SKIP or path.startswith(_AUTH_SKIP_PREFIX):
+        return await call_next(request)
+    token = request.cookies.get("site_tok")
+    if token:
+        with _SESSIONS_LOCK:
+            sessions = _sess_prune(_sess_load())
+        if token in sessions:
+            return await call_next(request)
+    next_url = request.url.path
+    if request.url.query:
+        next_url += "?" + request.url.query
+    return RedirectResponse(url=f"/login?next={next_url}", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_get(request: Request, next: str = "/"):
+    return templates.TemplateResponse("login.html", {"request": request, "next": next, "error": None})
+
+
+@app.post("/login")
+async def login_post(request: Request, name: str = Form(...), passphrase: str = Form(...), next: str = Form("/")):
+    global _SITE_PASS
+    if not _SITE_PASS or not secrets.compare_digest(passphrase.encode(), _SITE_PASS.encode()):
+        return templates.TemplateResponse("login.html", {
+            "request": request, "next": next, "error": "Incorrect passphrase.",
+        }, status_code=401)
+    token = secrets.token_urlsafe(32)
+    now   = time.time()
+    ip    = (
+        request.headers.get("X-Real-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "?")
+    )
+    entry = {
+        "name":       name.strip()[:64],
+        "user_agent": request.headers.get("User-Agent", "")[:200],
+        "ip":         ip,
+        "created_at": now,
+        "expires_at": now + _SESSION_TTL,
+    }
+    with _SESSIONS_LOCK:
+        sessions = _sess_prune(_sess_load())
+        sessions[token] = entry
+        _sess_save(sessions)
+    resp = RedirectResponse(url=next if next.startswith("/") else "/", status_code=303)
+    resp.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/sessions", response_class=HTMLResponse)
+async def sessions_page(request: Request):
+    with _SESSIONS_LOCK:
+        sessions = _sess_prune(_sess_load())
+        _sess_save(sessions)
+    now  = time.time()
+    rows = []
+    for tok, s in sessions.items():
+        ttl = max(0, s["expires_at"] - now)
+        rows.append({
+            "token":      tok,
+            "name":       s["name"],
+            "user_agent": s["user_agent"],
+            "ip":         s.get("ip", ""),
+            "created":    datetime.fromtimestamp(s["created_at"], ET).strftime("%Y-%m-%d %H:%M"),
+            "ttl":        f"{int(ttl // 86400)}d {int(ttl % 86400 // 3600)}h",
+        })
+    rows.sort(key=lambda r: r["created"], reverse=True)
+    return templates.TemplateResponse("sessions.html", {"request": request, "rows": rows, "active": "sessions"})
+
+
+@app.post("/sessions/revoke/{token}", response_class=RedirectResponse)
+async def sessions_revoke(token: str):
+    with _SESSIONS_LOCK:
+        sessions = _sess_load()
+        sessions.pop(token, None)
+        _sess_save(sessions)
+    return RedirectResponse(url="/sessions", status_code=303)
+
+
+@app.post("/sessions/revoke-all", response_class=RedirectResponse)
+async def sessions_revoke_all():
+    with _SESSIONS_LOCK:
+        _sess_save({})
+    return RedirectResponse(url="/sessions", status_code=303)
+
+
+@app.post("/sessions/change-pass", response_class=RedirectResponse)
+async def sessions_change_pass(new_pass: str = Form(...)):
+    global _SITE_PASS
+    from dotenv import set_key
+    _SITE_PASS = new_pass
+    set_key(_ENV_FILE, "SITE_PASS", new_pass)
+    return RedirectResponse(url="/sessions", status_code=303)
 FETCH_TIMEOUT = 8
 
 # ---------------------------------------------------------------------------
@@ -140,9 +258,12 @@ def _record_usage(app: str, model: str, input_tokens: int, output_tokens: int) -
 def _get_usage_stats() -> dict:
     try:
         with open(_USAGE_FILE) as f:
-            return json.load(f)
+            data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        data = {}
+    historical = data.get("_historical", {"calls": 0, "input_tokens": 0, "output_tokens": 0})
+    apps = {k: v for k, v in data.items() if not k.startswith("_")}
+    return {"apps": apps, "historical": historical}
 
 # ---------------------------------------------------------------------------
 # Headlines
@@ -2740,6 +2861,32 @@ async def sysinfo_data():
     return _JSR(data)
 
 
+@app.post("/sysinfo/reset-usage", response_class=RedirectResponse)
+async def sysinfo_reset_usage():
+    with _USAGE_LOCK:
+        try:
+            with open(_USAGE_FILE) as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+        hist = data.get("_historical", {"calls": 0, "input_tokens": 0, "output_tokens": 0})
+        for k, v in data.items():
+            if k.startswith("_"):
+                continue
+            hist["calls"]        += v.get("calls", 0)
+            hist["input_tokens"] += v.get("input_tokens", 0)
+            hist["output_tokens"] += v.get("output_tokens", 0)
+        new_data = {"_historical": hist}
+        for k, v in data.items():
+            if k.startswith("_"):
+                continue
+            new_data[k] = {"model": v.get("model", ""), "calls": 0, "input_tokens": 0, "output_tokens": 0}
+        os.makedirs(os.path.dirname(_USAGE_FILE), exist_ok=True)
+        with open(_USAGE_FILE, "w") as f:
+            json.dump(new_data, f, indent=2)
+    return RedirectResponse(url="/sysinfo", status_code=303)
+
+
 # ---------------------------------------------------------------------------
 # Gittyup
 
@@ -2774,21 +2921,21 @@ def _gittyup_status() -> dict:
 
 
 @app.get("/gittyup", response_class=HTMLResponse)
-async def gittyup_page(request: Request, _=Depends(_require_gittyup_auth)):
+async def gittyup_page(request: Request):
     return templates.TemplateResponse("gittyup.html", {
         "request": request, "active": "gittyup",
     })
 
 
 @app.get("/gittyup/status")
-async def gittyup_status(_=Depends(_require_gittyup_auth)):
+async def gittyup_status():
     from fastapi.responses import JSONResponse as _JSR
     data = await asyncio.get_event_loop().run_in_executor(None, _gittyup_status)
     return _JSR(data)
 
 
 @app.post("/gittyup/commit")
-async def gittyup_commit(request: Request, _=Depends(_require_gittyup_auth)):
+async def gittyup_commit(request: Request):
     from fastapi.responses import JSONResponse as _JSR
     body = await request.json()
     message = (body.get("message") or "").strip()

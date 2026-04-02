@@ -193,8 +193,15 @@
 
   <!-- Claude Usage -->
   <div class="si-card" id="card-claude">
-    <div class="si-card-title">Claude API Usage</div>
+    <div class="si-card-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Claude API Usage</span>
+      <form method="post" action="/sysinfo/reset-usage" style="margin:0"
+            onsubmit="return confirm('Reset current counts? Totals will be saved to historical.')">
+        <button type="submit" style="background:transparent;border:1px solid var(--dim);color:var(--dim);font-family:inherit;font-size:9px;padding:2px 7px;cursor:pointer;letter-spacing:0.06em;text-transform:uppercase">Reset</button>
+      </form>
+    </div>
     <div id="claude-usage-list"><span class="si-label">no data yet</span></div>
+    <div id="claude-usage-hist"></div>
   </div>
 
   <!-- Processes -->
@@ -326,8 +333,11 @@ function render(d) {
   ).join('');
 
   // Claude Usage
-  const cu = d.claude_usage || {};
+  const cuData = d.claude_usage || {};
+  const cu = cuData.apps || {};
+  const hist = cuData.historical || {calls: 0, input_tokens: 0, output_tokens: 0};
   const cuEl = document.getElementById('claude-usage-list');
+  const cuHistEl = document.getElementById('claude-usage-hist');
   const apps = Object.keys(cu);
   if (apps.length === 0) {
     cuEl.innerHTML = '<span class="si-label">no data yet</span>';
@@ -344,6 +354,15 @@ function render(d) {
         <div class="si-row"><span class="si-label">total tokens</span><span class="si-val">${total.toLocaleString()}</span></div>
       </div>`;
     }).join('<div style="border-top:1px solid var(--border);margin:0.4rem 0"></div>');
+  }
+  const histTotal = hist.input_tokens + hist.output_tokens;
+  if (histTotal > 0) {
+    cuHistEl.innerHTML = `<div style="border-top:1px solid var(--border);margin:0.5rem 0 0.3rem"></div>
+      <div class="si-row"><span class="si-label" style="font-size:10px">historical total</span></div>
+      <div class="si-row"><span class="si-label">calls</span><span class="si-val" style="color:var(--dim)">${hist.calls.toLocaleString()}</span></div>
+      <div class="si-row"><span class="si-label">tokens</span><span class="si-val" style="color:var(--dim)">${histTotal.toLocaleString()}</span></div>`;
+  } else {
+    cuHistEl.innerHTML = '';
   }
 
   // Processes
