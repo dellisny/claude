@@ -345,6 +345,24 @@
       padding: 1.5rem 0;
     }
 
+    /* ── Drag & drop ── */
+    .drag-handle {
+      color: var(--border);
+      font-size: 1.1rem;
+      cursor: grab;
+      padding-right: 4px;
+      flex-shrink: 0;
+      line-height: 1;
+      user-select: none;
+      touch-action: none;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .task-card.dragging { opacity: 0.35; }
+    .task-card.drag-over {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 2px var(--teal-lt);
+    }
+
     /* ── Updates ── */
     .updates-list {
       margin: 0.5rem 0 0.4rem;
@@ -467,6 +485,9 @@
 </div>
 
 <!-- Header -->
+<div style="display:flex; justify-content:center; padding:1rem; background:var(--bg);">
+  <img src="/static/minorcay_logo-1.png" alt="Minor Cay" style="width:96px; height:96px; object-fit:contain;">
+</div>
 <header>
   <div class="header-title">
     <span class="icon">⚓</span> Minor Cay
@@ -664,9 +685,11 @@ function renderCard(task, isCompleted) {
   ).join('');
   const doneDate = isCompleted && task.completed_at
     ? `<span class="completed-date">done ${fmtDate(task.completed_at)}</span>` : '';
+  const handle = isCompleted ? '' : '<span class="drag-handle" title="Drag to reorder">⠿</span>';
   return `
-    <div class="task-card${isCompleted ? ' completed' : ''}">
+    <div class="task-card${isCompleted ? ' completed' : ''}" data-task-id="${task.id}">
       <div class="card-top">
+        ${handle}
         <span class="task-name">${escHtml(task.name)}</span>
         <button class="delete-btn" onclick="deleteTask('${task.id}')" title="Delete">✕</button>
       </div>
@@ -703,10 +726,78 @@ async function loadTasks() {
   activeEl.innerHTML = active.length
     ? active.map(t => renderCard(t, false)).join('')
     : '<div class="empty-state">No active tasks — all clear! 🌴</div>';
+  if (active.length) initDrag();
 
   doneEl.innerHTML = completed.length
     ? completed.map(t => renderCard(t, true)).join('')
     : '<div class="empty-state">Nothing completed yet.</div>';
+}
+
+// ── Drag & drop reorder ──
+let dragSrc = null;
+let handleDown = false;
+
+async function persistOrder() {
+  const ids = [...document.getElementById('active-tasks').querySelectorAll('.task-card')]
+    .map(c => c.dataset.taskId);
+  await fetch('/minorcay/tasks/reorder', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ids }),
+  });
+}
+
+function initDrag() {
+  const container = document.getElementById('active-tasks');
+  const cards = [...container.querySelectorAll('.task-card')];
+
+  cards.forEach(card => {
+    const handle = card.querySelector('.drag-handle');
+    card.setAttribute('draggable', 'true');
+
+    if (handle) {
+      handle.addEventListener('mousedown', () => { handleDown = true; });
+      handle.addEventListener('touchstart', e => {
+        e.preventDefault();
+        dragSrc = card;
+        card.classList.add('dragging');
+      }, { passive: false });
+    }
+
+    card.addEventListener('dragstart', e => {
+      if (!handleDown) { e.preventDefault(); return; }
+      dragSrc = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      container.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+    });
+    card.addEventListener('dragover', e => {
+      if (!dragSrc) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (card !== dragSrc) {
+        container.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+        card.classList.add('drag-over');
+      }
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragSrc && dragSrc !== card) {
+        const rect = card.getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height / 2) {
+          container.insertBefore(dragSrc, card);
+        } else {
+          container.insertBefore(dragSrc, card.nextSibling);
+        }
+        persistOrder();
+      }
+      card.classList.remove('drag-over');
+    });
+  });
 }
 
 // ── Enter key in name field ──
@@ -715,6 +806,44 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTasks();
   document.getElementById('f-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') submitTask();
+  });
+
+  document.addEventListener('mouseup', () => { handleDown = false; });
+
+  // Touch drag support for iOS/mobile
+  document.addEventListener('touchmove', e => {
+    if (!dragSrc) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const container = document.getElementById('active-tasks');
+    dragSrc.style.visibility = 'hidden';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    dragSrc.style.visibility = '';
+    const target = el && el.closest('.task-card');
+    container.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+    if (target && target !== dragSrc) target.classList.add('drag-over');
+  }, { passive: false });
+
+  document.addEventListener('touchend', e => {
+    if (!dragSrc) return;
+    const touch = e.changedTouches[0];
+    const container = document.getElementById('active-tasks');
+    dragSrc.style.visibility = 'hidden';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    dragSrc.style.visibility = '';
+    const target = el && el.closest('.task-card');
+    container.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+    if (target && target !== dragSrc) {
+      const rect = target.getBoundingClientRect();
+      if (touch.clientY < rect.top + rect.height / 2) {
+        container.insertBefore(dragSrc, target);
+      } else {
+        container.insertBefore(dragSrc, target.nextSibling);
+      }
+      persistOrder();
+    }
+    dragSrc.classList.remove('dragging');
+    dragSrc = null;
   });
 });
 </script>

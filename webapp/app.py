@@ -36,9 +36,11 @@ import secrets
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="Dashboard")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 _basic = HTTPBasic()
@@ -2875,6 +2877,24 @@ async def minorcay_add_task(request: Request):
         tasks.insert(0, task)
         _mc_save(tasks)
     return _JSR(task)
+
+
+@app.post("/minorcay/tasks/reorder")
+async def minorcay_reorder_tasks(request: Request):
+    from fastapi.responses import JSONResponse as _JSR
+    body = await request.json()
+    ids = [str(i) for i in body.get("ids", [])]
+    with _MC_LOCK:
+        tasks = _mc_load()
+        active_map = {t["id"]: t for t in tasks if t["status"] != "Complete"}
+        completed = [t for t in tasks if t["status"] == "Complete"]
+        reordered = [active_map[i] for i in ids if i in active_map]
+        seen = set(ids)
+        for t in tasks:
+            if t["status"] != "Complete" and t["id"] not in seen:
+                reordered.append(t)
+        _mc_save(reordered + completed)
+    return _JSR({"ok": True})
 
 
 @app.patch("/minorcay/tasks/{task_id}")

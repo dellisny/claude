@@ -1,14 +1,20 @@
 {
   "twenty_questions": {
     "model": "claude-sonnet-4-6",
-    "calls": 22,
-    "input_tokens": 11424,
-    "output_tokens": 1961
+    "calls": 23,
+    "input_tokens": 11696,
+    "output_tokens": 1987
   },
   "stock_ticker": {
     "model": "claude-haiku-4-5-20251001",
-    "calls": 202,
-    "input_tokens": 12819,
-    "output_tokens": 1172
+    "calls": 203,
+    "input_tokens": 12880,
+    "output_tokens": 1178
+  },
+  "adventure": {
+    "model": "claude-opus-4-6",
+    "calls": 194,
+    "input_tokens": 1655985,
+    "output_tokens": 117659
   }
 }
