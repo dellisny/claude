@@ -2891,6 +2891,8 @@ async def sysinfo_reset_usage():
 # Gittyup
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_GIT_SSH_CMD = f"ssh -i {os.path.expanduser('~/.ssh/id_ed25519')} -o StrictHostKeyChecking=no"
+_GIT_ENV = {**os.environ, "GIT_SSH_COMMAND": _GIT_SSH_CMD}
 
 
 def _git(cmd: list[str]) -> str:
@@ -2899,6 +2901,7 @@ def _git(cmd: list[str]) -> str:
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
+        env=_GIT_ENV,
     )
     return result.stdout
 
@@ -2947,13 +2950,13 @@ async def gittyup_commit(request: Request):
             _git(["add", "-A"])
             result = subprocess.run(
                 ["git", "commit", "-m", message],
-                cwd=_REPO_ROOT, capture_output=True, text=True,
+                cwd=_REPO_ROOT, capture_output=True, text=True, env=_GIT_ENV,
             )
             if result.returncode != 0:
                 return {"ok": False, "error": result.stderr.strip() or result.stdout.strip()}
             push = subprocess.run(
                 ["git", "push", "origin", "main"],
-                cwd=_REPO_ROOT, capture_output=True, text=True,
+                cwd=_REPO_ROOT, capture_output=True, text=True, env=_GIT_ENV,
             )
             if push.returncode != 0:
                 return {"ok": False, "error": push.stderr.strip() or push.stdout.strip()}
