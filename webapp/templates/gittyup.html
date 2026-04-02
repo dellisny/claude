@@ -130,6 +130,8 @@
         <textarea id="commit-msg" rows="2"></textarea>
       </div>
       <button class="gu-btn" id="commit-btn" onclick="doCommit()">Commit &amp; Push</button>
+      <button class="gu-btn" id="push-btn" onclick="doPush()"
+              style="display:none;margin-left:0.5rem;background:transparent;border:1px solid var(--yellow);color:var(--yellow)">Push</button>
       <div id="gu-result"></div>
     </div>
   </div>
@@ -199,8 +201,9 @@ async function loadStatus() {
   // Diff
   document.getElementById('diff-pre').innerHTML = renderDiff(d.diff);
 
-  // Disable commit if nothing to do
-  document.getElementById('commit-btn').disabled = d.clean;
+  // Disable commit if nothing to stage; show Push if commits are waiting
+  document.getElementById('commit-btn').disabled = d.status.length === 0;
+  document.getElementById('push-btn').style.display = d.ahead > 0 ? 'inline-block' : 'none';
 }
 
 async function doCommit() {
@@ -231,6 +234,30 @@ async function doCommit() {
   }
 
   btn.textContent = 'Commit & Push';
+  btn.disabled = false;
+}
+
+async function doPush() {
+  const btn = document.getElementById('push-btn');
+  const result = document.getElementById('gu-result');
+  btn.disabled = true;
+  btn.textContent = 'Pushing…';
+  result.style.display = 'none';
+
+  const r = await fetch('/gittyup/push', { method: 'POST' });
+  const d = await r.json();
+
+  result.style.display = 'block';
+  if (d.ok) {
+    result.className = 'ok';
+    result.textContent = d.output || 'Pushed.';
+    await loadStatus();
+  } else {
+    result.className = 'err';
+    result.textContent = d.error || 'Unknown error.';
+  }
+
+  btn.textContent = 'Push';
   btn.disabled = false;
 }
 

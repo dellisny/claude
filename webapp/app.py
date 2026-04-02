@@ -2937,6 +2937,24 @@ async def gittyup_status():
     return _JSR(data)
 
 
+@app.post("/gittyup/push")
+async def gittyup_push():
+    from fastapi.responses import JSONResponse as _JSR
+    def _do_push():
+        try:
+            push = subprocess.run(
+                ["git", "push", "origin", "main"],
+                cwd=_REPO_ROOT, capture_output=True, text=True, env=_GIT_ENV,
+            )
+            if push.returncode != 0:
+                return {"ok": False, "error": push.stderr.strip() or push.stdout.strip()}
+            return {"ok": True, "output": push.stdout.strip() or push.stderr.strip() or "Pushed."}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    data = await asyncio.get_event_loop().run_in_executor(None, _do_push)
+    return _JSR(data)
+
+
 @app.post("/gittyup/commit")
 async def gittyup_commit(request: Request):
     from fastapi.responses import JSONResponse as _JSR
