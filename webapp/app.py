@@ -2996,6 +2996,7 @@ import threading as _mc_lock_mod
 
 _MC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "minorcay_tasks.toml")
 _MC_LOCK = _mc_lock_mod.Lock()
+_mc_previous: list | None = None
 
 
 def _mc_load() -> list[dict]:
@@ -3010,6 +3011,12 @@ def _mc_save(tasks: list[dict]) -> None:
     os.makedirs(os.path.dirname(_MC_FILE), exist_ok=True)
     with open(_MC_FILE, "w") as f:
         _toml.dump({"tasks": tasks}, f)
+
+
+def _mc_save_with_undo(tasks: list[dict]) -> None:
+    global _mc_previous
+    _mc_previous = _mc_load()
+    _mc_save(tasks)
 
 
 @app.get("/minorcay", response_class=HTMLResponse)
@@ -3043,7 +3050,7 @@ async def minorcay_add_task(request: Request):
     with _MC_LOCK:
         tasks = _mc_load()
         tasks.insert(0, task)
-        _mc_save(tasks)
+        _mc_save_with_undo(tasks)
     return _JSR(task)
 
 
@@ -3061,7 +3068,7 @@ async def minorcay_reorder_tasks(request: Request):
         for t in tasks:
             if t["status"] != "Complete" and t["id"] not in seen:
                 reordered.append(t)
-        _mc_save(reordered + completed)
+        _mc_save_with_undo(reordered + completed)
     return _JSR({"ok": True})
 
 
@@ -3090,7 +3097,7 @@ async def minorcay_update_task(task_id: str, request: Request):
                 if promote and i != 0:
                     tasks.pop(i)
                     tasks.insert(0, t)
-                _mc_save(tasks)
+                _mc_save_with_undo(tasks)
                 return _JSR(t)
     return _JSR({"error": "not found"}, status_code=404)
 
@@ -3101,7 +3108,7 @@ async def minorcay_delete_task(task_id: str):
     with _MC_LOCK:
         tasks = _mc_load()
         tasks = [t for t in tasks if t["id"] != task_id]
-        _mc_save(tasks)
+        _mc_save_with_undo(tasks)
     return _JSR({"ok": True})
 
 
@@ -3127,7 +3134,7 @@ async def minorcay_add_update(task_id: str, request: Request):
                 if t.get("status") != "Complete" and i != 0:
                     tasks.pop(i)
                     tasks.insert(0, t)
-                _mc_save(tasks)
+                _mc_save_with_undo(tasks)
                 return _JSR(update)
     return _JSR({"error": "not found"}, status_code=404)
 
@@ -3143,7 +3150,19 @@ async def minorcay_delete_update(task_id: str, update_idx: int):
                 if 0 <= update_idx < len(updates):
                     updates.pop(update_idx)
                     t["updates"] = updates
-                    _mc_save(tasks)
+                    _mc_save_with_undo(tasks)
                     return _JSR({"ok": True})
                 return _JSR({"error": "index out of range"}, status_code=404)
     return _JSR({"error": "not found"}, status_code=404)
+
+
+@app.post("/minorcay/undo")
+async def minorcay_undo():
+    global _mc_previous
+    from fastapi.responses import JSONResponse as _JSR
+    with _MC_LOCK:
+        if _mc_previous is None:
+            return _JSR({"ok": False, "undone": False})
+        _mc_save(_mc_previous)
+        _mc_previous = None
+    return _JSR({"ok": True, "undone": True})

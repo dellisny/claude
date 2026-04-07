@@ -1,4 +1,69 @@
 [[tasks]]
+id = "d3137e17-92be-4104-b6c0-d50ae7822ddc"
+creator = "Doug"
+name = "A couple of the new Bougainvillea plants have not thrived"
+description = ""
+status = "New"
+created_at = "2026-03-21T19:12:22.007029+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "I think Ramon may have replaced"
+created_at = "2026-04-07T20:58:40.156473+00:00"
+
+
+[[tasks]]
+id = "82028fb3-9062-41d8-878c-f592caee17cb"
+creator = "Doug"
+name = "Cart: Minor Cay II"
+description = "Doug ordered a new gold cart approximately two years ago and it has never run properly, this has only been noticed when the family are in residence as when Karl runs it - he must not give it enough use to see the battery fade.  Several complaints have been made but the supplier has either suggested we are not looking after batteries, or it has not been charged properly. Now Doug has yet another invoice for picking up the cart and saying we need to charge it. GG to write a note to the supplier asking for replacement batteries at a reduced cost to settle the issue. Done 5th March 2026."
+status = "Complete"
+created_at = "2026-03-21T21:09:20.416798+00:00"
+completed_at = "2026-04-07T14:42:48.855995+00:00"
+[[tasks.updates]]
+author = "Doug"
+text = "They picked it up and replaced some batteries."
+created_at = "2026-04-07T14:42:25.245580+00:00"
+
+
+[[tasks]]
+id = "0db41d00-75b3-4540-bbe4-783c53f4c822"
+creator = "Doug"
+name = "Hard Water"
+description = "Doug reported the dishwasher has been showing signs of calcium build up - GG research dif GE Dishwashers have a built in water softener. GG asked Kelson of Tair plumbing to test the water for hardness. If it is hard we could review installing whole house water softener or specific in line device just for the dishwasher"
+status = "In Progress"
+created_at = "2026-03-21T21:06:32.187084+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "I just want to make sure we don’t reduce water pressure furhter"
+created_at = "2026-03-21T21:06:59.174177+00:00"
+
+[[tasks.updates]]
+author = "Doug"
+text = "Approved quote"
+created_at = "2026-04-06T18:17:46.018098+00:00"
+
+
+[[tasks]]
+id = "6405e7fb-bdcb-4762-8767-6bd7c70ac959"
+creator = "Doug"
+name = "Generator Fuel"
+description = "How and when does this get replenished"
+status = "New"
+created_at = "2026-04-03T13:47:20.188171+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "cbbb1ec7-f2b0-4676-847c-833bb86c8744"
+creator = "Doug"
+name = "Pool Heaters: Go No Go"
+description = "There are lots of new costs here? Are sunk costs enough to justify moving forward? Is there a guarantee this will work? Can we sell the heaters?"
+status = "New"
+created_at = "2026-04-02T20:54:21.027129+00:00"
+completed_at = ""
+
+[[tasks]]
 id = "c8d91bb4-ce40-4e45-b9e8-5b3c10f0dc05"
 creator = "Doug"
 name = "Railing Plugs"
@@ -63,15 +128,6 @@ created_at = "2026-03-21T21:09:51.257163+00:00"
 completed_at = ""
 
 [[tasks]]
-id = "82028fb3-9062-41d8-878c-f592caee17cb"
-creator = "Doug"
-name = "Cart: Minor Cay II"
-description = "Doug ordered a new gold cart approximately two years ago and it has never run properly, this has only been noticed when the family are in residence as when Karl runs it - he must not give it enough use to see the battery fade.  Several complaints have been made but the supplier has either suggested we are not looking after batteries, or it has not been charged properly. Now Doug has yet another invoice for picking up the cart and saying we need to charge it. GG to write a note to the supplier asking for replacement batteries at a reduced cost to settle the issue. Done 5th March 2026."
-status = "In Progress"
-created_at = "2026-03-21T21:09:20.416798+00:00"
-completed_at = ""
-
-[[tasks]]
 id = "a88b584a-e10b-4617-baa1-57de370e8ed4"
 creator = "Doug"
 name = "\u2060Kitchen cabinet magnet"
@@ -90,20 +146,6 @@ created_at = "2026-03-21T21:07:35.232808+00:00"
 completed_at = ""
 
 [[tasks]]
-id = "0db41d00-75b3-4540-bbe4-783c53f4c822"
-creator = "Doug"
-name = "Hard Water"
-description = "Doug reported the dishwasher has been showing signs of calcium build up - GG research dif GE Dishwashers have a built in water softener. GG asked Kelson of Tair plumbing to test the water for hardness. If it is hard we could review installing whole house water softener or specific in line device just for the dishwasher"
-status = "In Progress"
-created_at = "2026-03-21T21:06:32.187084+00:00"
-completed_at = ""
-[[tasks.updates]]
-author = "Doug"
-text = "I just want to make sure we don’t reduce water pressure furhter"
-created_at = "2026-03-21T21:06:59.174177+00:00"
-
-
-[[tasks]]
 id = "39f46ed9-40f1-4064-a273-787043b2b4e5"
 creator = "Doug"
 name = "Motion controlled light"
@@ -117,9 +159,9 @@ id = "75131ce2-8a8a-48a1-8c91-198ba1b3e650"
 creator = "Doug"
 name = "Water heater for Master Bath"
 description = "Let’s see if the inline water heater speeds water heating…"
-status = "In Progress"
+status = "Complete"
 created_at = "2026-03-21T19:13:18.611801+00:00"
-completed_at = ""
+completed_at = "2026-04-07T20:50:06.786805+00:00"
 [[tasks.updates]]
 author = "Doug"
 text = "Water heats quickly. Pressure is pretty good."
@@ -133,15 +175,6 @@ name = "Orchids?"
 description = "Amanda asked Ramon about this, but I don't tbink he has replied."
 status = "New"
 created_at = "2026-03-21T19:12:55.409129+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "d3137e17-92be-4104-b6c0-d50ae7822ddc"
-creator = "Doug"
-name = "A couple of the new Bougainvillea plants have not thrived"
-description = ""
-status = "New"
-created_at = "2026-03-21T19:12:22.007029+00:00"
 completed_at = ""
 
 [[tasks]]

@@ -345,6 +345,39 @@
       padding: 1.5rem 0;
     }
 
+    /* ── Undo button ── */
+    .undo-btn {
+      background: transparent;
+      color: var(--dim);
+      border: 1px solid var(--border);
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .undo-btn:hover:not(:disabled) {
+      border-color: var(--teal);
+      color: var(--teal-dk);
+    }
+    .undo-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .index-link {
+      display: block;
+      color: var(--teal-dk);
+      font-size: 0.8rem;
+      text-decoration: none;
+      padding: 2px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.45;
+    }
+    .index-link:hover { text-decoration: underline; }
+    .index-link.done { color: var(--dim); }
+    .index-empty { font-size: 0.78rem; color: var(--dim); }
+
     /* ── Drag & drop ── */
     .drag-handle {
       color: var(--border);
@@ -454,13 +487,43 @@
     }
     .add-update-form button:hover { background: var(--teal-dk); }
 
+    /* ── Page layout ── */
+    .page-layout {
+      display: flex;
+      gap: 1.2rem;
+      padding: 0 1.2rem;
+      align-items: flex-start;
+    }
+    main { flex: 1; min-width: 0; padding: 0; }
+    .task-sidebar {
+      display: none;
+      width: 160px;
+      flex-shrink: 0;
+      padding-top: 0.6rem;
+    }
+    .sidebar-head {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--dim);
+      margin-bottom: 0.35rem;
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid var(--border);
+    }
+
     @media (min-width: 600px) {
       header { padding: 1rem 2rem; }
-      .add-bar { padding: 1.2rem 2rem 0.6rem; }
-      .task-form { margin: 0.5rem 2rem 1rem; }
-      main { padding: 0 2rem; max-width: 720px; margin: 0 auto; }
-      .add-bar { max-width: 720px; margin: 0 auto; padding: 1.2rem 0 0.6rem; }
-      .task-form { max-width: 720px; margin: 0.5rem auto 1rem; }
+      .add-bar { padding: 1.2rem 2rem 0.6rem; max-width: 760px; margin: 0 auto; padding: 1.2rem 0 0.6rem; }
+      .task-form { max-width: 760px; margin: 0.5rem auto 1rem; }
+      .page-layout { padding: 0 2rem; max-width: 760px; margin: 0 auto; }
+    }
+
+    @media (min-width: 1020px) {
+      .task-sidebar { display: block; position: sticky; top: 0.75rem; max-height: 100vh; overflow-y: auto; }
+      .page-layout { max-width: 1060px; padding: 0 1.5rem; }
+      .add-bar { max-width: 1060px; padding: 1.2rem 1.5rem 0.6rem; }
+      .task-form { max-width: 1060px; margin: 0.5rem auto 1rem; padding: 1.2rem 1.5rem; }
     }
   </style>
 </head>
@@ -500,9 +563,12 @@
 
 <!-- Add task -->
 <div class="add-bar">
-  <button class="add-task-btn" id="add-btn" onclick="toggleForm()">
-    <span>＋</span> Add Task
-  </button>
+  <div style="display:flex; gap:0.6rem; align-items:center;">
+    <button class="add-task-btn" id="add-btn" onclick="toggleForm()">
+      <span>＋</span> Add Task
+    </button>
+    <button class="undo-btn" id="undo-btn" onclick="undoLast()" disabled>↩ Undo</button>
+  </div>
 </div>
 
 <!-- Task form -->
@@ -524,17 +590,29 @@
 </div>
 
 <!-- Main content -->
-<main>
-  <div class="section-head">
-    Active <span class="count" id="active-count">0</span>
-  </div>
-  <div id="active-tasks"></div>
+<div class="page-layout">
+  <aside class="task-sidebar">
+    <div class="sidebar-head">Active</div>
+    <div id="index-active"></div>
+  </aside>
 
-  <div class="section-head" style="margin-top:1rem;">
-    Completed <span class="count" id="done-count">0</span>
-  </div>
-  <div id="completed-tasks"></div>
-</main>
+  <main>
+    <div class="section-head">
+      Active <span class="count" id="active-count">0</span>
+    </div>
+    <div id="active-tasks"></div>
+
+    <div class="section-head" style="margin-top:1rem;">
+      Completed <span class="count" id="done-count">0</span>
+    </div>
+    <div id="completed-tasks"></div>
+  </main>
+
+  <aside class="task-sidebar">
+    <div class="sidebar-head">Completed</div>
+    <div id="index-done"></div>
+  </aside>
+</div>
 
 <script>
 // ── Cookie helpers ──
@@ -600,6 +678,7 @@ async function submitTask() {
     document.getElementById('f-desc').value = '';
     document.getElementById('f-status').value = 'New';
     toggleForm();
+    setUndoState(true);
     loadTasks();
   }
 }
@@ -619,12 +698,14 @@ async function updateStatus(id, newStatus) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ status: newStatus }),
   });
+  setUndoState(true);
   loadTasks();
 }
 
 async function deleteTask(id) {
   if (!confirm('Delete this task?')) return;
   await fetch(`/minorcay/tasks/${id}`, { method: 'DELETE' });
+  setUndoState(true);
   loadTasks();
 }
 
@@ -669,12 +750,14 @@ async function submitUpdate(taskId) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ author: currentUser, text }),
   });
+  setUndoState(true);
   loadTasks();
 }
 
 async function deleteUpdate(taskId, idx) {
   if (!confirm('Delete this update?')) return;
   await fetch(`/minorcay/tasks/${taskId}/updates/${idx}`, { method: 'DELETE' });
+  setUndoState(true);
   loadTasks();
 }
 
@@ -687,7 +770,7 @@ function renderCard(task, isCompleted) {
     ? `<span class="completed-date">done ${fmtDate(task.completed_at)}</span>` : '';
   const handle = isCompleted ? '' : '<span class="drag-handle" title="Drag to reorder">⠿</span>';
   return `
-    <div class="task-card${isCompleted ? ' completed' : ''}" data-task-id="${task.id}">
+    <div class="task-card${isCompleted ? ' completed' : ''}" id="task-${task.id}" data-task-id="${task.id}">
       <div class="card-top">
         ${handle}
         <span class="task-name">${escHtml(task.name)}</span>
@@ -710,6 +793,21 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Undo ──
+let _canUndo = false;
+function setUndoState(enabled) {
+  _canUndo = enabled;
+  document.getElementById('undo-btn').disabled = !enabled;
+}
+async function undoLast() {
+  const resp = await fetch('/minorcay/undo', { method: 'POST' });
+  const data = await resp.json();
+  if (data.undone) {
+    setUndoState(false);
+    loadTasks();
+  }
+}
+
 async function loadTasks() {
   const resp = await fetch('/minorcay/tasks');
   const data = await resp.json();
@@ -719,6 +817,13 @@ async function loadTasks() {
 
   document.getElementById('active-count').textContent = active.length;
   document.getElementById('done-count').textContent   = completed.length;
+
+  // Populate index panel
+  const mkLinks = (tasks, done) => tasks.length
+    ? tasks.map(t => `<a href="#task-${t.id}" class="index-link${done ? ' done' : ''}">${escHtml(t.name)}</a>`).join('')
+    : `<span class="index-empty">none</span>`;
+  document.getElementById('index-active').innerHTML = mkLinks(active, false);
+  document.getElementById('index-done').innerHTML   = mkLinks(completed, true);
 
   const activeEl = document.getElementById('active-tasks');
   const doneEl   = document.getElementById('completed-tasks');
@@ -745,6 +850,7 @@ async function persistOrder() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ ids }),
   });
+  setUndoState(true);
 }
 
 function initDrag() {
