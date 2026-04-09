@@ -12,9 +12,9 @@
   },
   "stock_ticker": {
     "model": "claude-haiku-4-5-20251001",
-    "calls": 0,
-    "input_tokens": 0,
-    "output_tokens": 0
+    "calls": 1,
+    "input_tokens": 62,
+    "output_tokens": 6
   },
   "adventure": {
     "model": "claude-opus-4-6",

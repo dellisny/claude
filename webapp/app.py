@@ -141,8 +141,13 @@ async def _site_auth(request: Request, call_next):
     if token:
         with _SESSIONS_LOCK:
             sessions = _sess_prune(_sess_load())
+            if token in sessions:
+                sessions[token]["expires_at"] = time.time() + _SESSION_TTL
+                _sess_save(sessions)
         if token in sessions:
-            return await call_next(request)
+            response = await call_next(request)
+            response.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax")
+            return response
     next_url = request.url.path
     if request.url.query:
         next_url += "?" + request.url.query
