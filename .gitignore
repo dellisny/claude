@@ -19,3 +19,6 @@ hnt/pHNT
 # Junk
 webapp/=*
 webapp/gunicorn.ctl
+
+# Runtime data
+webapp/data/sessions.json
