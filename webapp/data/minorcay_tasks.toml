@@ -1,24 +1,162 @@
 [[tasks]]
-id = "a360b754-24e6-4ce9-a320-8da6c7c69212"
+id = "39f46ed9-40f1-4064-a273-787043b2b4e5"
 creator = "Doug"
-name = "Ring battery cycling"
-description = "The Ring batteries need swapping every several weeks. We now have two sets."
+name = "Motion controlled light"
+description = "Motion controlled light by car shed needs adjustment/repair"
 status = "In Progress"
-created_at = "2026-04-09T15:49:02.820124+00:00"
+created_at = "2026-03-21T19:47:36.094955+00:00"
 completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "I changed the bulb, but to no effect."
+created_at = "2026-04-12T14:23:40.646971+00:00"
+
+
+[[tasks]]
+id = "0b8510c6-d503-4d61-a071-a46bdbdfbcc4"
+creator = "Doug"
+name = "Broken outside dining table chair"
+description = "Is this even fixable?"
+status = "New"
+created_at = "2026-04-11T23:23:18.117772+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "e3f16ad2-911d-4254-9f90-061a689a42ec"
+creator = "Doug"
+name = "Concrete Lid Mystery"
+description = "Why is the concrete lid off again by the pool?"
+status = "In Progress"
+created_at = "2026-03-21T19:11:27.618253+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "Ramon says it is not his guys…"
+created_at = "2026-04-11T15:54:36.721245+00:00"
+
 
 [[tasks]]
 id = "e71a6603-52a5-41fb-9c87-b2057811c41e"
 creator = "Doug"
 name = "Pool is green again"
 description = "Rains have again turned it green"
-status = "New"
+status = "Complete"
 created_at = "2026-04-08T20:37:38.591281+00:00"
-completed_at = ""
+completed_at = "2026-04-11T15:54:17.892502+00:00"
 [[tasks.updates]]
 author = "Doug"
 text = "Pool co said they would send someone yesterday"
 created_at = "2026-04-08T20:37:45.083723+00:00"
+
+[[tasks.updates]]
+author = "Doug"
+text = "Pump was on low. Turned it up..."
+created_at = "2026-04-10T15:19:13.546855+00:00"
+
+[[tasks.updates]]
+author = "Doug"
+text = "Getting clearer. Low pump speed and dirty awnings contributing…"
+created_at = "2026-04-11T15:54:11.232469+00:00"
+
+
+[[tasks]]
+id = "245df34c-7f91-4341-80ee-c6ac5ab0d735"
+creator = "Doug"
+name = "Minor Cay Car 2 Rattles"
+description = "The battery situation is much better, but the frame rattles when hitting any kind of bump. The other cart does not do this. I think it just needs to be tightened up in places."
+status = "New"
+created_at = "2026-04-11T15:25:25.832712+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "c8d91bb4-ce40-4e45-b9e8-5b3c10f0dc05"
+creator = "Doug"
+name = "Railing Plugs"
+description = "Some railings on the top floor porch have holes that are missing plugs."
+status = "In Progress"
+created_at = "2026-03-23T00:02:07.194213+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "ff758859-a33e-4d63-b7b8-fd382f761392"
+creator = "Doug"
+name = "Warped Trash Lid"
+description = "The trash lid is warped"
+status = "In Progress"
+created_at = "2026-03-21T19:07:06.285966+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "371f6197-dc4b-48a6-a1d3-fe6cc8076e63"
+creator = "Doug"
+name = "Tilting Dishwasher"
+description = "This will most likely require the dishwasher screwing back into cabinets or feet adjusting - I can do this today if needed or when you leave? Plumber is on site today - have asked him to take a look."
+status = "In Progress"
+created_at = "2026-03-21T21:07:35.232808+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "a88b584a-e10b-4617-baa1-57de370e8ed4"
+creator = "Doug"
+name = "\u2060Kitchen cabinet magnet"
+description = "Adhesive has worn. Needs screws."
+status = "In Progress"
+created_at = "2026-03-21T21:08:33.950497+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "509a8d91-4eb2-43d1-a4b9-5947919d668f"
+creator = "Doug"
+name = "Storage Organization"
+description = "Doug asked Kay for her organizational skills in the basement"
+status = "In Progress"
+created_at = "2026-03-21T21:09:51.257163+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "f474ca35-ca07-4cd3-ac05-737730b2e48b"
+creator = "Doug"
+name = "Deep Cleaning"
+description = "Amanda brought up the possibility of deep cleaning. Kay to organise deep cleaning of top floor living area after Bliss has departed?"
+status = "In Progress"
+created_at = "2026-03-21T21:10:33.040520+00:00"
+completed_at = ""
+[[tasks.updates]]
+author = "Doug"
+text = "I think more than top floor may need this…"
+created_at = "2026-03-21T21:10:49.168374+00:00"
+
+
+[[tasks]]
+id = "cbbb1ec7-f2b0-4676-847c-833bb86c8744"
+creator = "Doug"
+name = "Pool Heaters: Go No Go"
+description = "There are lots of new costs here? Are sunk costs enough to justify moving forward? Is there a guarantee this will work? Can we sell the heaters?"
+status = "In Progress"
+created_at = "2026-04-02T20:54:21.027129+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "830f1f71-896c-487f-abce-8fa7545964d4"
+creator = "Doug"
+name = "Landscape lights."
+description = "Wall lights still out."
+status = "In Progress"
+created_at = "2026-04-09T22:48:17.151148+00:00"
+completed_at = ""
+
+[[tasks]]
+id = "a360b754-24e6-4ce9-a320-8da6c7c69212"
+creator = "Doug"
+name = "Ring battery cycling"
+description = "The Ring batteries need swapping every several weeks. We now have two sets."
+status = "Complete"
+created_at = "2026-04-09T15:49:02.820124+00:00"
+completed_at = "2026-04-10T14:41:29.601718+00:00"
+[[tasks.updates]]
+author = "Doug"
+text = "I spoke with Rose and showed here the spare batteries and charger. I/we just need to tell her when to swap."
+created_at = "2026-04-10T13:54:37.191033+00:00"
 
 
 [[tasks]]
@@ -73,27 +211,9 @@ id = "6405e7fb-bdcb-4762-8767-6bd7c70ac959"
 creator = "Doug"
 name = "Generator Fuel"
 description = "How and when does this get replenished"
-status = "New"
+status = "Complete"
 created_at = "2026-04-03T13:47:20.188171+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "cbbb1ec7-f2b0-4676-847c-833bb86c8744"
-creator = "Doug"
-name = "Pool Heaters: Go No Go"
-description = "There are lots of new costs here? Are sunk costs enough to justify moving forward? Is there a guarantee this will work? Can we sell the heaters?"
-status = "New"
-created_at = "2026-04-02T20:54:21.027129+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "c8d91bb4-ce40-4e45-b9e8-5b3c10f0dc05"
-creator = "Doug"
-name = "Railing Plugs"
-description = "Some railings on the top floor porch have holes that are missing plugs."
-status = "New"
-created_at = "2026-03-23T00:02:07.194213+00:00"
-completed_at = ""
+completed_at = "2026-04-10T15:20:47.677000+00:00"
 
 [[tasks]]
 id = "c421fce1-5f0b-47af-8781-57f2949bfd97"
@@ -114,9 +234,9 @@ id = "27b0530b-75b3-481c-b3c2-33f495ab1e30"
 creator = "Bliss"
 name = "Laundry Toilet"
 description = "Laundry Toilet needs new tank works. It runs often. Maybe the seat can also be better secured."
-status = "New"
+status = "Complete"
 created_at = "2026-03-23T21:55:12.129096+00:00"
-completed_at = ""
+completed_at = "2026-04-10T15:34:04.201115+00:00"
 
 [[tasks]]
 id = "b78a507b-7af3-46df-8a7f-b7547914ee39"
@@ -125,56 +245,6 @@ name = "Pool Heaters"
 description = "Both GG and Doug agreed we should proceed very slowly with the Pool Heaters install. The electrician's plumber was concerned at some of the pipe work and has called in an expert for advice. Today the electrician reports that he is unhappy with the voltage at the pool house - He is investigating and liaising with BPL."
 status = "In Progress"
 created_at = "2026-03-21T21:11:09.803182+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "f474ca35-ca07-4cd3-ac05-737730b2e48b"
-creator = "Doug"
-name = "Deep Cleaning"
-description = "Amanda brought up the possibility of deep cleaning. Kay to organise deep cleaning of top floor living area after Bliss has departed?"
-status = "New"
-created_at = "2026-03-21T21:10:33.040520+00:00"
-completed_at = ""
-[[tasks.updates]]
-author = "Doug"
-text = "I think more than top floor may need this…"
-created_at = "2026-03-21T21:10:49.168374+00:00"
-
-
-[[tasks]]
-id = "509a8d91-4eb2-43d1-a4b9-5947919d668f"
-creator = "Doug"
-name = "Storage Organization"
-description = "Doug asked Kay for her organizational skills in the basement"
-status = "New"
-created_at = "2026-03-21T21:09:51.257163+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "a88b584a-e10b-4617-baa1-57de370e8ed4"
-creator = "Doug"
-name = "\u2060Kitchen cabinet magnet"
-description = "Adhesive has worn. Needs screws."
-status = "New"
-created_at = "2026-03-21T21:08:33.950497+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "371f6197-dc4b-48a6-a1d3-fe6cc8076e63"
-creator = "Doug"
-name = "Tilting Dishwasher"
-description = "This will most likely require the dishwasher screwing back into cabinets or feet adjusting - I can do this today if needed or when you leave? Plumber is on site today - have asked him to take a look."
-status = "New"
-created_at = "2026-03-21T21:07:35.232808+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "39f46ed9-40f1-4064-a273-787043b2b4e5"
-creator = "Doug"
-name = "Motion controlled light"
-description = "Motion controlled light by car shed needs adjustment/repair"
-status = "New"
-created_at = "2026-03-21T19:47:36.094955+00:00"
 completed_at = ""
 
 [[tasks]]
@@ -198,24 +268,6 @@ name = "Orchids?"
 description = "Amanda asked Ramon about this, but I don't tbink he has replied."
 status = "New"
 created_at = "2026-03-21T19:12:55.409129+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "e3f16ad2-911d-4254-9f90-061a689a42ec"
-creator = "Doug"
-name = "Concrete Lid Mystery"
-description = "Why is the concrete lid off again by the pool?"
-status = "New"
-created_at = "2026-03-21T19:11:27.618253+00:00"
-completed_at = ""
-
-[[tasks]]
-id = "ff758859-a33e-4d63-b7b8-fd382f761392"
-creator = "Doug"
-name = "Warped Trash Lid"
-description = "The trash lid is warped"
-status = "New"
-created_at = "2026-03-21T19:07:06.285966+00:00"
 completed_at = ""
 
 [[tasks]]

@@ -611,7 +611,23 @@ async def bets_page(
 # HNT
 # ---------------------------------------------------------------------------
 
-def fetch_hnt() -> dict:
+_HNT_SHM_FILE    = os.path.expanduser("~/run/shm/price")
+_HNT_LOG_FILE    = os.path.expanduser("~/run/logs/price.log")
+_HNT_THRESH_FILE = os.path.expanduser("~/run/shm/threshold")
+_HNT_PAUSED_FILE = os.path.expanduser("~/run/shm/paused")
+_HNT_BAL         = 46254
+_HNT_TEXTBELT_KEY = "e3ee7fc553f5815a7e505c84177249d360d81f9f5ZsXLT78uXgM5ZwOtfiEyJShF"
+
+_hnt_cache: dict = {}
+_HNT_TTL = 60  # seconds
+
+
+def _hnt_fetch_price() -> dict:
+    now = time.time()
+    cache_ts = _hnt_cache.get("ts", 0)
+    if cache_ts + _HNT_TTL > now:
+        age = int(now - cache_ts)
+        return {**_hnt_cache["data"], "cached_age": age}
     try:
         url = (
             "https://api.coingecko.com/api/v3/simple/price"
@@ -620,19 +636,143 @@ def fetch_hnt() -> dict:
         with urllib.request.urlopen(url, timeout=8) as resp:
             data = json.loads(resp.read())
         h = data.get("helium", {})
-        return {
+        result = {
             "price": h.get("usd"),
             "change_24h": h.get("usd_24h_change"),
             "vol_24h": h.get("usd_24h_vol"),
         }
+        _hnt_cache["data"] = result
+        _hnt_cache["ts"] = now
+        return result
     except Exception as e:
+        if _hnt_cache.get("data"):
+            age = int(now - cache_ts)
+            return {**_hnt_cache["data"], "cached_age": age}
         return {"error": str(e)}
+
+
+def _hnt_read_anchor() -> float:
+    try:
+        return float(open(_HNT_SHM_FILE).read().strip())
+    except Exception:
+        return 0.0
+
+
+def _hnt_read_threshold() -> float:
+    try:
+        return float(open(_HNT_THRESH_FILE).read().strip())
+    except Exception:
+        return 4.0
+
+
+def _hnt_is_paused() -> bool:
+    return os.path.exists(_HNT_PAUSED_FILE)
+
+
+import re as _re
+
+def _hnt_parse_log() -> list:
+    entries = []
+    try:
+        with open(_HNT_LOG_FILE) as f:
+            for line in f:
+                line = line.strip()
+                m = _re.match(
+                    r'(\d{4}/\d{2}/\d{2} \d{2}:\d{2}) Updating \(([^)]+)\) to \(([^)]+)\) \$(.+)',
+                    line,
+                )
+                if m:
+                    from_p = float(m.group(2))
+                    to_p   = float(m.group(3))
+                    delta  = round((to_p - from_p) / from_p * 100, 1) if from_p else 0
+                    entries.append({
+                        "ts":         m.group(1),
+                        "from_price": from_p,
+                        "to_price":   to_p,
+                        "delta_pct":  delta,
+                        "value":      "$" + m.group(4),
+                        "dir":        "up" if to_p >= from_p else "down",
+                    })
+    except Exception:
+        pass
+    return list(reversed(entries))
 
 
 @app.get("/hnt", response_class=HTMLResponse)
 async def hnt_page(request: Request):
-    data = fetch_hnt()
-    return templates.TemplateResponse("hnt.html", {"request": request, "data": data})
+    return templates.TemplateResponse("hnt.html", {"request": request})
+
+
+@app.get("/hnt/data")
+async def hnt_data():
+    pd = _hnt_fetch_price()
+    price  = pd.get("price")
+    anchor = _hnt_read_anchor()
+    delta_pct    = round((price - anchor) / anchor * 100, 2) if price and anchor else None
+    portfolio    = round(price * _HNT_BAL, 2)                if price else None
+    dollar_change = round((price - anchor) * _HNT_BAL, 2)   if price and anchor else None
+    return {
+        "price":        price,
+        "change_24h":   pd.get("change_24h"),
+        "anchor":       anchor,
+        "delta_pct":    delta_pct,
+        "portfolio":    portfolio,
+        "dollar_change": dollar_change,
+        "cached_age":   pd.get("cached_age"),
+        "paused":       _hnt_is_paused(),
+        "threshold":    _hnt_read_threshold(),
+        "error":        pd.get("error"),
+    }
+
+
+@app.get("/hnt/log")
+async def hnt_log():
+    return {"entries": _hnt_parse_log()}
+
+
+@app.get("/hnt/quota")
+async def hnt_quota():
+    try:
+        resp = requests.get(
+            f"https://textbelt.com/quota/{_HNT_TEXTBELT_KEY}", timeout=5
+        )
+        resp.raise_for_status()
+        return {"quota": resp.json().get("quotaRemaining")}
+    except Exception as e:
+        return {"quota": None, "error": str(e)}
+
+
+@app.post("/hnt/reset-anchor")
+async def hnt_reset_anchor():
+    pd = _hnt_fetch_price()
+    price = pd.get("price")
+    if not price:
+        return {"ok": False, "error": "No current price available"}
+    with open(_HNT_SHM_FILE, "w") as f:
+        f.write(str(price))
+    return {"ok": True, "anchor": price}
+
+
+@app.post("/hnt/set-threshold")
+async def hnt_set_threshold(request: Request):
+    body = await request.json()
+    try:
+        threshold = float(body.get("threshold", 4.0))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid threshold"}
+    with open(_HNT_THRESH_FILE, "w") as f:
+        f.write(str(threshold))
+    return {"ok": True, "threshold": threshold}
+
+
+@app.post("/hnt/toggle-pause")
+async def hnt_toggle_pause():
+    if _hnt_is_paused():
+        os.remove(_HNT_PAUSED_FILE)
+        return {"ok": True, "paused": False}
+    else:
+        open(_HNT_PAUSED_FILE, "w").close()
+        return {"ok": True, "paused": True}
 
 
 # ---------------------------------------------------------------------------

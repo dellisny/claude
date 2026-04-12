@@ -4,79 +4,377 @@
 
 {% block extra_styles %}
 <style>
-  .hnt-card {
-    display: inline-block;
-    margin-top: 1.5rem;
-    padding: 2rem 3rem;
+  /* ── Main stats grid ──────────────────────────────────────── */
+  .hnt-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
     border: 1px solid var(--border);
-    background: var(--bg2);
+    margin-bottom: 1.2rem;
   }
-  .hnt-price {
-    font-size: 3rem;
+  @media (max-width: 640px) { .hnt-grid { grid-template-columns: 1fr; } }
+
+  .hnt-cell {
+    background: var(--bg2);
+    padding: 1.1rem 1.4rem;
+  }
+  .hnt-cell-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 0.4rem;
+  }
+  .hnt-cell-value {
+    font-size: 2rem;
     font-weight: 700;
     color: var(--text);
-    letter-spacing: 0.05em;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
   }
-  .hnt-label {
-    color: var(--yellow);
-    font-size: 12px;
-    letter-spacing: 0.15em;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-  }
-  .hnt-change {
-    font-size: 1.1rem;
-    margin-top: 0.4rem;
-  }
-  .up   { color: #69f0ae; }
-  .down { color: #ff5252; }
-  .hnt-vol {
-    color: var(--dim);
+  .hnt-cell-sub {
     font-size: 11px;
-    margin-top: 0.75rem;
-    letter-spacing: 0.05em;
-  }
-  .hnt-error { color: var(--red); margin-top: 1rem; }
-  .refresh-btn {
-    display: inline-block;
-    margin-top: 1.5rem;
-    border: 1px solid var(--dim);
     color: var(--dim);
+    margin-top: 0.3rem;
+  }
+  .up   { color: #16a34a; }
+  .down { color: #dc2626; }
+
+  /* ── Controls row ─────────────────────────────────────────── */
+  .hnt-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 1.2rem;
+  }
+  .hnt-ctrl-box {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.9rem;
+  }
+  .hnt-ctrl-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .hnt-ctrl-box input[type=number] {
+    width: 52px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 6px;
+    outline: none;
+  }
+  .hnt-ctrl-box input[type=number]:focus { border-color: var(--yellow); }
+
+  .hnt-btn {
+    background: transparent;
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
     font-family: inherit;
     font-size: 11px;
-    padding: 4px 14px;
-    text-decoration: none;
+    padding: 4px 12px;
+    cursor: pointer;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-  .refresh-btn:hover { color: var(--text); border-color: var(--text); }
+  .hnt-btn:hover { background: rgba(217,119,6,0.08); }
+  .hnt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .hnt-btn-red {
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .hnt-btn-red:hover { background: rgba(220,38,38,0.08); }
+
+  .hnt-btn-green {
+    border-color: var(--green);
+    color: var(--green);
+  }
+  .hnt-btn-green:hover { background: rgba(22,163,74,0.08); }
+
+  /* alert status badge */
+  .alert-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border: 1px solid;
+    letter-spacing: 0.08em;
+  }
+  .alert-badge.active { border-color: var(--green); color: var(--green); }
+  .alert-badge.paused { border-color: var(--red);   color: var(--red); }
+
+  /* quota */
+  .quota-val { font-size: 13px; font-weight: 700; color: var(--text); }
+
+  /* cached note */
+  .cached-note {
+    font-size: 10px;
+    color: var(--yellow);
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Alert history ────────────────────────────────────────── */
+  .hnt-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .hnt-table th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    padding: 4px 10px;
+  }
+  .hnt-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hnt-table tr:last-child td { border-bottom: none; }
+  .hnt-table tr:hover td { background: var(--bg3); }
+  .hnt-table-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    overflow: auto;
+    max-height: 420px;
+  }
+
+  .loading-dim {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 1rem;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="rule">HNT &nbsp; HELIUM</div>
+<div class="rule">HNT &nbsp;/&nbsp; HELIUM &nbsp; <span id="cached-note" class="cached-note" style="display:none"></span></div>
 
-{% if data.error %}
-  <div class="hnt-error">Error: {{ data.error }}</div>
-{% else %}
-  <div class="hnt-card">
-    <div class="hnt-label">HNT / USD</div>
-    <div class="hnt-price">${{ "%.4f"|format(data.price) }}</div>
+<!-- Stats grid: loaded async -->
+<div class="hnt-grid" id="stats-grid">
+  <div class="hnt-cell"><div class="loading-dim">Loading…</div></div>
+  <div class="hnt-cell"></div>
+  <div class="hnt-cell"></div>
+</div>
 
-    {% if data.change_24h is not none %}
-      {% set change = data.change_24h %}
-      <div class="hnt-change {% if change >= 0 %}up{% else %}down{% endif %}">
-        {% if change >= 0 %}▲{% else %}▼{% endif %}
-        {{ "%.2f"|format(change | abs) }}%&nbsp; 24h
-      </div>
-    {% endif %}
+<!-- Controls -->
+<div class="hnt-controls">
 
-    {% if data.vol_24h is not none %}
-      <div class="hnt-vol">24h vol &nbsp; ${{ "{:,.0f}".format(data.vol_24h) }}</div>
-    {% endif %}
+  <div class="hnt-ctrl-box">
+    <span class="hnt-ctrl-label">Alerts</span>
+    <span class="alert-badge" id="alert-badge">…</span>
+    <button class="hnt-btn" id="pause-btn" onclick="togglePause()">…</button>
   </div>
-{% endif %}
 
-<br>
-<a href="/hnt" class="refresh-btn">Refresh</a>
+  <div class="hnt-ctrl-box">
+    <span class="hnt-ctrl-label">Threshold</span>
+    <input type="number" id="thresh-input" min="0.1" max="50" step="0.5" value="">
+    <span style="font-size:12px;color:var(--dim)">%</span>
+    <button class="hnt-btn" onclick="setThreshold()">Set</button>
+  </div>
+
+  <div class="hnt-ctrl-box">
+    <button class="hnt-btn" onclick="resetAnchor()">Reset Anchor to Current</button>
+  </div>
+
+  <div class="hnt-ctrl-box">
+    <span class="hnt-ctrl-label">SMS Quota</span>
+    <span class="quota-val" id="quota-val">…</span>
+  </div>
+
+</div>
+
+<!-- Alert history -->
+<div class="rule">ALERT HISTORY</div>
+<div class="hnt-table-wrap" id="log-wrap">
+  <div class="loading-dim">Loading…</div>
+</div>
+
 {% endblock %}
+
+{% block extra_scripts %}
+<script>
+function fmtPrice(p) {
+  if (p == null) return '—';
+  return '$' + p.toFixed(4);
+}
+function fmtDollar(d) {
+  if (d == null) return '—';
+  const abs = Math.abs(d);
+  const str = abs.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+  return (d >= 0 ? '+$' : '-$') + str;
+}
+function fmtPortfolio(p) {
+  if (p == null) return '—';
+  return '$' + p.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+function fmtPct(p) {
+  if (p == null) return '—';
+  return (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
+}
+function trendClass(v) {
+  if (v == null) return '';
+  return v >= 0 ? 'up' : 'down';
+}
+
+function renderStats(d) {
+  const grid = document.getElementById('stats-grid');
+  const deltaClass = trendClass(d.delta_pct);
+  const chgClass   = trendClass(d.change_24h);
+  const dcClass    = trendClass(d.dollar_change);
+
+  grid.innerHTML = `
+    <div class="hnt-cell">
+      <div class="hnt-cell-label">Current Price</div>
+      <div class="hnt-cell-value">${fmtPrice(d.price)}</div>
+      <div class="hnt-cell-sub ${chgClass}">${fmtPct(d.change_24h ? parseFloat(d.change_24h.toFixed(2)) : null)} 24h</div>
+    </div>
+    <div class="hnt-cell">
+      <div class="hnt-cell-label">vs Anchor (${fmtPrice(d.anchor)})</div>
+      <div class="hnt-cell-value ${deltaClass}">${fmtPct(d.delta_pct)}</div>
+      <div class="hnt-cell-sub ${dcClass}">${fmtDollar(d.dollar_change)}</div>
+    </div>
+    <div class="hnt-cell">
+      <div class="hnt-cell-label">Portfolio (46,254 HNT)</div>
+      <div class="hnt-cell-value">${fmtPortfolio(d.portfolio)}</div>
+      <div class="hnt-cell-sub">@ ${fmtPrice(d.price)}</div>
+    </div>
+  `;
+
+  // cached indicator
+  const note = document.getElementById('cached-note');
+  if (d.cached_age != null) {
+    note.textContent = `ⓘ cached — ${d.cached_age}s ago`;
+    note.style.display = 'inline';
+  } else {
+    note.style.display = 'none';
+  }
+
+  // alert controls
+  const badge = document.getElementById('alert-badge');
+  const btn   = document.getElementById('pause-btn');
+  if (d.paused) {
+    badge.textContent = 'PAUSED';
+    badge.className = 'alert-badge paused';
+    btn.textContent = 'Resume';
+    btn.className = 'hnt-btn hnt-btn-green';
+  } else {
+    badge.textContent = 'ACTIVE';
+    badge.className = 'alert-badge active';
+    btn.textContent = 'Pause';
+    btn.className = 'hnt-btn hnt-btn-red';
+  }
+
+  // threshold
+  const ti = document.getElementById('thresh-input');
+  if (!ti._touched) ti.value = d.threshold;
+}
+
+function renderLog(entries) {
+  const wrap = document.getElementById('log-wrap');
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="loading-dim">No alert history found.</div>';
+    return;
+  }
+  const rows = entries.map(e => {
+    const cls = e.dir === 'up' ? 'up' : 'down';
+    const arrow = e.dir === 'up' ? '▲' : '▼';
+    return `<tr>
+      <td style="color:var(--dim)">${e.ts}</td>
+      <td>$${e.from_price}</td>
+      <td>$${e.to_price}</td>
+      <td class="${cls}">${arrow} ${Math.abs(e.delta_pct)}%</td>
+      <td>${e.value}</td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <table class="hnt-table">
+      <thead><tr>
+        <th>Time</th><th>From</th><th>To</th><th>Move</th><th>Portfolio Value</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function renderQuota(q) {
+  const el = document.getElementById('quota-val');
+  el.textContent = q.quota != null ? q.quota : '—';
+  if (q.quota != null && q.quota < 5) el.style.color = 'var(--red)';
+}
+
+async function loadData() {
+  try {
+    const d = await fetch('/hnt/data').then(r => r.json());
+    renderStats(d);
+  } catch(e) {
+    document.getElementById('stats-grid').innerHTML =
+      `<div class="hnt-cell"><div style="color:var(--red)">Failed to load data.</div></div>`;
+  }
+}
+
+async function loadLog() {
+  try {
+    const d = await fetch('/hnt/log').then(r => r.json());
+    renderLog(d.entries);
+  } catch(e) {
+    document.getElementById('log-wrap').innerHTML =
+      '<div class="loading-dim" style="color:var(--red)">Failed to load log.</div>';
+  }
+}
+
+async function loadQuota() {
+  try {
+    const q = await fetch('/hnt/quota').then(r => r.json());
+    renderQuota(q);
+  } catch(e) {}
+}
+
+async function resetAnchor() {
+  const r = await fetch('/hnt/reset-anchor', {method: 'POST'}).then(r => r.json());
+  if (r.ok) loadData();
+  else alert('Error: ' + r.error);
+}
+
+async function togglePause() {
+  const r = await fetch('/hnt/toggle-pause', {method: 'POST'}).then(r => r.json());
+  if (r.ok) loadData();
+}
+
+async function setThreshold() {
+  const val = parseFloat(document.getElementById('thresh-input').value);
+  if (isNaN(val) || val <= 0) { alert('Enter a valid threshold.'); return; }
+  const r = await fetch('/hnt/set-threshold', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({threshold: val}),
+  }).then(r => r.json());
+  if (!r.ok) alert('Error: ' + r.error);
+}
+
+// mark threshold input as user-touched so we don't overwrite it on reload
+document.getElementById('thresh-input').addEventListener('input', function() {
+  this._touched = true;
+});
+
+loadData();
+loadLog();
+loadQuota();
+
+// refresh price every 60s
+setInterval(loadData, 60000);
+</script>
+{% endblock %}
+
+{% block footer %}HNT data via CoinGecko · Alerts via Textbelt{% endblock %}

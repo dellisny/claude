@@ -500,13 +500,19 @@
       nextSub.textContent = `${sTotal} rounds each — flip a coin 🪙`;
     } else {
       nextEl.classList.remove('balanced');
-      const last = outings[0];
-      const nextPayer = last.payer === 'S' ? 'Doug' : 'Stephen';
-      const nextColor = last.payer === 'S' ? D_COLOR : S_COLOR;
+      // positive diff = Stephen paid more = Doug owes; negative = Doug paid more = Stephen owes
+      const diff = sTotal - dTotal;
+      const nextPayer = diff > 0 ? 'Doug' : 'Stephen';
+      const nextColor = diff > 0 ? D_COLOR : S_COLOR;
+      const owes = Math.abs(diff);
       nextEl.style.setProperty('--next-color', nextColor);
       nextName.textContent = nextPayer;
-      const lastName = last.payer === 'S' ? 'Stephen' : 'Doug';
-      nextSub.textContent = `${lastName} got the last one (${formatDate(last.date)})`;
+      if (owes === 1) {
+        const aheadName = diff > 0 ? 'Stephen' : 'Doug';
+        nextSub.textContent = `${aheadName} is 1 round ahead (${sTotal} vs ${dTotal})`;
+      } else {
+        nextSub.textContent = `${owes} rounds behind — needs to pay ${owes} times to catch up (${sTotal} vs ${dTotal})`;
+      }
     }
 
     const listEl = document.getElementById('historyList');
