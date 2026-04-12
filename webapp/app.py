@@ -3139,9 +3139,36 @@ import toml as _toml
 import uuid as _uuid
 import threading as _mc_lock_mod
 
-_MC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "minorcay_tasks.toml")
-_MC_LOCK = _mc_lock_mod.Lock()
+_MC_FILE       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "minorcay_tasks.toml")
+_MC_LOCK       = _mc_lock_mod.Lock()
 _mc_previous: list | None = None
+_MC_NTFY_TOPIC = "minorcay-doug-a7x93k"
+_MC_OWNER      = "doug"
+
+
+def _mc_get_actor(request: Request) -> str:
+    token = request.cookies.get("site_tok", "")
+    if token:
+        with _SESSIONS_LOCK:
+            sessions = _sess_load()
+        return sessions.get(token, {}).get("name", "unknown")
+    return "unknown"
+
+
+def _mc_notify(actor: str, message: str) -> None:
+    if actor.lower() == _MC_OWNER:
+        return
+    def _send():
+        try:
+            requests.post(
+                f"https://ntfy.sh/{_MC_NTFY_TOPIC}",
+                data=message.encode(),
+                headers={"Title": "Minorcay edit", "Priority": "default"},
+                timeout=5,
+            )
+        except Exception:
+            pass
+    _threading.Thread(target=_send, daemon=True).start()
 
 
 def _mc_load() -> list[dict]:
@@ -3180,6 +3207,7 @@ async def minorcay_get_tasks():
 @app.post("/minorcay/tasks")
 async def minorcay_add_task(request: Request):
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     body = await request.json()
     task = {
         "id":           str(_uuid.uuid4()),
@@ -3196,12 +3224,14 @@ async def minorcay_add_task(request: Request):
         tasks = _mc_load()
         tasks.insert(0, task)
         _mc_save_with_undo(tasks)
+    _mc_notify(actor, f'{actor} added task: "{task["name"]}"')
     return _JSR(task)
 
 
 @app.post("/minorcay/tasks/reorder")
 async def minorcay_reorder_tasks(request: Request):
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     body = await request.json()
     ids = [str(i) for i in body.get("ids", [])]
     with _MC_LOCK:
@@ -3214,12 +3244,14 @@ async def minorcay_reorder_tasks(request: Request):
             if t["status"] != "Complete" and t["id"] not in seen:
                 reordered.append(t)
         _mc_save_with_undo(reordered + completed)
+    _mc_notify(actor, f"{actor} reordered tasks")
     return _JSR({"ok": True})
 
 
 @app.patch("/minorcay/tasks/{task_id}")
 async def minorcay_update_task(task_id: str, request: Request):
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     body = await request.json()
     with _MC_LOCK:
         tasks = _mc_load()
@@ -3243,23 +3275,37 @@ async def minorcay_update_task(task_id: str, request: Request):
                     tasks.pop(i)
                     tasks.insert(0, t)
                 _mc_save_with_undo(tasks)
+                parts = []
+                if new_status:
+                    parts.append(f"status → {new_status}")
+                if "name" in body:
+                    parts.append(f"name → \"{t['name']}\"")
+                if "description" in body:
+                    parts.append("description updated")
+                detail = ", ".join(parts) if parts else "updated"
+                _mc_notify(actor, f'{actor} edited "{t["name"]}": {detail}')
                 return _JSR(t)
     return _JSR({"error": "not found"}, status_code=404)
 
 
 @app.delete("/minorcay/tasks/{task_id}")
-async def minorcay_delete_task(task_id: str):
+async def minorcay_delete_task(task_id: str, request: Request):
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     with _MC_LOCK:
         tasks = _mc_load()
+        deleted = next((t for t in tasks if t["id"] == task_id), None)
         tasks = [t for t in tasks if t["id"] != task_id]
         _mc_save_with_undo(tasks)
+    if deleted:
+        _mc_notify(actor, f'{actor} deleted task: "{deleted["name"]}"')
     return _JSR({"ok": True})
 
 
 @app.post("/minorcay/tasks/{task_id}/updates")
 async def minorcay_add_update(task_id: str, request: Request):
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     body = await request.json()
     text = str(body.get("text") or "").strip()
     if not text:
@@ -3280,13 +3326,15 @@ async def minorcay_add_update(task_id: str, request: Request):
                     tasks.pop(i)
                     tasks.insert(0, t)
                 _mc_save_with_undo(tasks)
+                _mc_notify(actor, f'{actor} added update to "{t["name"]}": {text[:120]}')
                 return _JSR(update)
     return _JSR({"error": "not found"}, status_code=404)
 
 
 @app.delete("/minorcay/tasks/{task_id}/updates/{update_idx}")
-async def minorcay_delete_update(task_id: str, update_idx: int):
+async def minorcay_delete_update(task_id: str, update_idx: int, request: Request):
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     with _MC_LOCK:
         tasks = _mc_load()
         for t in tasks:
@@ -3296,18 +3344,21 @@ async def minorcay_delete_update(task_id: str, update_idx: int):
                     updates.pop(update_idx)
                     t["updates"] = updates
                     _mc_save_with_undo(tasks)
+                    _mc_notify(actor, f'{actor} deleted an update from "{t["name"]}"')
                     return _JSR({"ok": True})
                 return _JSR({"error": "index out of range"}, status_code=404)
     return _JSR({"error": "not found"}, status_code=404)
 
 
 @app.post("/minorcay/undo")
-async def minorcay_undo():
+async def minorcay_undo(request: Request):
     global _mc_previous
     from fastapi.responses import JSONResponse as _JSR
+    actor = _mc_get_actor(request)
     with _MC_LOCK:
         if _mc_previous is None:
             return _JSR({"ok": False, "undone": False})
         _mc_save(_mc_previous)
         _mc_previous = None
+    _mc_notify(actor, f"{actor} triggered undo")
     return _JSR({"ok": True, "undone": True})
