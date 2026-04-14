@@ -860,16 +860,23 @@ function initDrag() {
 
   cards.forEach(card => {
     const handle = card.querySelector('.drag-handle');
-    card.setAttribute('draggable', 'true');
 
     if (handle) {
-      handle.addEventListener('mousedown', () => { handleDown = true; });
+      handle.addEventListener('mousedown', () => {
+        handleDown = true;
+        card.setAttribute('draggable', 'true');
+      });
       handle.addEventListener('touchstart', e => {
         e.preventDefault();
         dragSrc = card;
         card.classList.add('dragging');
       }, { passive: false });
     }
+
+    document.addEventListener('mouseup', () => {
+      handleDown = false;
+      card.setAttribute('draggable', 'false');
+    });
 
     card.addEventListener('dragstart', e => {
       if (!handleDown) { e.preventDefault(); return; }
@@ -879,6 +886,7 @@ function initDrag() {
     });
     card.addEventListener('dragend', () => {
       card.classList.remove('dragging');
+      card.setAttribute('draggable', 'false');
       container.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
     });
     card.addEventListener('dragover', e => {
