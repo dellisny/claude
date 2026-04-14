@@ -417,12 +417,33 @@
       padding-top: 1px;
       flex-shrink: 0;
     }
+    .update-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
     .update-text {
       font-size: 0.82rem;
       color: var(--text);
       line-height: 1.4;
-      flex: 1;
     }
+    .update-text.collapsed {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .update-expand-btn {
+      background: none;
+      border: none;
+      color: var(--teal);
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 0;
+      margin-top: 2px;
+      text-align: left;
+    }
+    .update-expand-btn:hover { text-decoration: underline; }
     .update-del {
       background: transparent;
       border: none;
@@ -722,7 +743,10 @@ function renderUpdates(task) {
   const list = updates.map((u, i) => `
     <div class="update-item">
       <span class="update-meta">${escHtml(u.author || '?')} · ${fmtDate(u.created_at)}</span>
-      <span class="update-text">${escHtml(u.text)}</span>
+      <div class="update-body">
+        <span class="update-text collapsed" id="upd-${task.id}-${i}">${escHtml(u.text)}</span>
+        <button class="update-expand-btn" onclick="toggleUpdateExpand('upd-${task.id}-${i}', this)">more</button>
+      </div>
       <button class="update-del" onclick="deleteUpdate('${task.id}', ${i})" title="Remove">✕</button>
     </div>`).join('');
   return `
@@ -734,6 +758,19 @@ function renderUpdates(task) {
         <button onclick="submitUpdate('${task.id}')">Save</button>
       </div>
     </div>`;
+}
+
+function toggleUpdateExpand(id, btn) {
+  const el = document.getElementById(id);
+  const collapsed = el.classList.toggle('collapsed');
+  btn.textContent = collapsed ? 'more' : 'less';
+}
+
+function initUpdateClamps() {
+  document.querySelectorAll('.update-text.collapsed').forEach(el => {
+    const btn = el.nextElementSibling;
+    if (btn && el.scrollHeight <= el.clientHeight) btn.style.display = 'none';
+  });
 }
 
 function toggleUpdateForm(taskId) {
@@ -837,6 +874,8 @@ async function loadTasks() {
   doneEl.innerHTML = completed.length
     ? completed.map(t => renderCard(t, true)).join('')
     : '<div class="empty-state">Nothing completed yet.</div>';
+
+  initUpdateClamps();
 }
 
 // ── Drag & drop reorder ──
