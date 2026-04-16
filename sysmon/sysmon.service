@@ -1,0 +1,17 @@
+[Unit]
+Description=System Resource Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=dellis
+WorkingDirectory=/home/dellis/dev/claude/sysmon
+ExecStart=/home/dellis/dev/claude/webapp/venv/bin/python /home/dellis/dev/claude/sysmon/sysmon.py
+Restart=always
+RestartSec=30
+Environment=SYSMON_NTFY_TOPIC=sysmon-doug-a7x93k
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
