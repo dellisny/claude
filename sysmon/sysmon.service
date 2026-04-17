@@ -10,6 +10,7 @@ ExecStart=/home/dellis/dev/claude/webapp/venv/bin/python /home/dellis/dev/claude
 Restart=always
 RestartSec=30
 Environment=SYSMON_NTFY_TOPIC=sysmon-doug-a7x93k
+Environment=SYSMON_MEM_PCT=70
 StandardOutput=journal
 StandardError=journal
 
