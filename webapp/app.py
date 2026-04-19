@@ -142,7 +142,9 @@ async def _site_auth(request: Request, call_next):
         with _SESSIONS_LOCK:
             sessions = _sess_prune(_sess_load())
             if token in sessions:
-                sessions[token]["expires_at"] = time.time() + _SESSION_TTL
+                now = time.time()
+                sessions[token]["expires_at"] = now + _SESSION_TTL
+                sessions[token]["last_used_at"] = now
                 _sess_save(sessions)
         if token in sessions:
             response = await call_next(request)
@@ -177,8 +179,9 @@ async def login_post(request: Request, name: str = Form(...), passphrase: str = 
         "name":       name.strip()[:64],
         "user_agent": request.headers.get("User-Agent", "")[:200],
         "ip":         ip,
-        "created_at": now,
-        "expires_at": now + _SESSION_TTL,
+        "created_at":   now,
+        "last_used_at": now,
+        "expires_at":   now + _SESSION_TTL,
     }
     with _SESSIONS_LOCK:
         sessions = _sess_prune(_sess_load())
@@ -187,6 +190,20 @@ async def login_post(request: Request, name: str = Form(...), passphrase: str = 
     resp = RedirectResponse(url=next if next.startswith("/") else "/", status_code=303)
     resp.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax")
     return resp
+
+
+def _rel_time(seconds: float) -> str:
+    s = int(seconds)
+    if s < 60:
+        return "just now"
+    if s < 3600:
+        m = s // 60
+        return f"{m}m ago"
+    if s < 86400:
+        h = s // 3600
+        return f"{h}h ago"
+    d = s // 86400
+    return f"{d}d ago"
 
 
 @app.get("/sessions", response_class=HTMLResponse)
@@ -198,15 +215,18 @@ async def sessions_page(request: Request):
     rows = []
     for tok, s in sessions.items():
         ttl = max(0, s["expires_at"] - now)
+        last_used_at = s.get("last_used_at", s["created_at"])
         rows.append({
             "token":      tok,
             "name":       s["name"],
             "user_agent": s["user_agent"],
             "ip":         s.get("ip", ""),
             "created":    datetime.fromtimestamp(s["created_at"], ET).strftime("%Y-%m-%d %H:%M"),
+            "last_used":  _rel_time(now - last_used_at),
+            "last_used_at": last_used_at,
             "ttl":        f"{int(ttl // 86400)}d {int(ttl % 86400 // 3600)}h",
         })
-    rows.sort(key=lambda r: r["created"], reverse=True)
+    rows.sort(key=lambda r: r["last_used_at"], reverse=True)
     return templates.TemplateResponse("sessions.html", {"request": request, "rows": rows, "active": "sessions"})
 
 
@@ -1340,127 +1360,12 @@ async def watchlist_remove(sym: str = Form(...)):
 # Hormuz — Strait of Hormuz live ship tracker
 # ---------------------------------------------------------------------------
 
-_HORMUZ_BBOX = {"lat_min": 22.0, "lat_max": 28.0, "lon_min": 53.0, "lon_max": 62.0}
-_vessels: dict = {}       # mmsi → vessel dict
-_ais_connected: bool = False
-
-
-def _vtype_color(t):
-    if t is None:        return "#9ca3af"
-    if 80 <= t <= 89:    return "#ef4444"   # tanker
-    if 70 <= t <= 79:    return "#3b82f6"   # cargo
-    if 60 <= t <= 69:    return "#22c55e"   # passenger
-    if t == 30:          return "#eab308"   # fishing
-    if 50 <= t <= 59:    return "#a855f7"   # special
-    return "#9ca3af"
-
-
-def _vtype_label(t):
-    if t is None:        return "Unknown"
-    if 80 <= t <= 89:    return "Tanker"
-    if 70 <= t <= 79:    return "Cargo"
-    if 60 <= t <= 69:    return "Passenger"
-    if t == 30:          return "Fishing"
-    if 50 <= t <= 59:    return "Special"
-    return f"Type {t}"
-
-
-def _ingest(msg: dict):
-    mtype = msg.get("MessageType")
-    meta  = msg.get("MetaData", {})
-    mmsi  = str(meta.get("MMSI", "")).strip()
-    if not mmsi:
-        return
-    v   = _vessels.get(mmsi, {"mmsi": mmsi})
-    lat = meta.get("latitude")
-    lon = meta.get("longitude")
-    if lat is not None: v["lat"] = lat
-    if lon is not None: v["lon"] = lon
-    nm = (meta.get("ShipName") or "").strip()
-    if nm: v["name"] = nm
-    v["ts"] = time.time()
-    if mtype == "PositionReport":
-        b = (msg.get("Message") or {}).get("PositionReport", {})
-        if b.get("Sog") is not None:           v["sog"] = round(b["Sog"], 1)
-        if b.get("Cog") is not None:           v["cog"] = round(b["Cog"], 1)
-        hdg = b.get("TrueHeading")
-        if hdg is not None and hdg != 511:     v["hdg"] = hdg
-        if b.get("NavigationalStatus") is not None: v["nav"] = b["NavigationalStatus"]
-    elif mtype == "ShipStaticData":
-        b = (msg.get("Message") or {}).get("ShipStaticData", {})
-        sn = (b.get("Name") or "").strip()
-        if sn: v["name"] = sn
-        if b.get("Type") is not None: v["vtype"] = b["Type"]
-        dest = (b.get("Destination") or "").strip()
-        if dest: v["dest"] = dest
-    _vessels[mmsi] = v
-
-
-async def _aisstream_loop():
-    global _ais_connected
-    while True:
-        api_key = os.environ.get("AISSTREAM_KEY", "")
-        if not api_key or not _HAS_WS:
-            await asyncio.sleep(30)
-            continue
-        try:
-            async with _ws_lib.connect(
-                "wss://stream.aisstream.io/v0/stream", ping_interval=20, open_timeout=15
-            ) as ws:
-                _ais_connected = True
-                await ws.send(json.dumps({
-                    "APIKey": api_key,
-                    "BoundingBoxes": [[[_HORMUZ_BBOX["lat_min"], _HORMUZ_BBOX["lon_min"]],
-                                       [_HORMUZ_BBOX["lat_max"], _HORMUZ_BBOX["lon_max"]]]],
-                    "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
-                }))
-                async for raw in ws:
-                    try:
-                        _ingest(json.loads(raw))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        _ais_connected = False
-        await asyncio.sleep(15)
-
-
-@app.on_event("startup")
-async def _start_hormuz():
-    asyncio.create_task(_aisstream_loop())
-
-
 @app.get("/hormuz", response_class=HTMLResponse)
 async def hormuz_page(request: Request):
     return templates.TemplateResponse("hormuz.html", {
-        "request":  request,
-        "active":   "hormuz",
-        "has_key":  bool(os.environ.get("AISSTREAM_KEY")),
-        "has_ws":   _HAS_WS,
+        "request": request,
+        "active":  "hormuz",
     })
-
-
-@app.get("/hormuz/vessels")
-async def hormuz_vessels():
-    cutoff = time.time() - 900  # 15-min staleness window
-    live = [
-        {
-            "mmsi":       v["mmsi"],
-            "name":       v.get("name", ""),
-            "lat":        v["lat"],
-            "lon":        v["lon"],
-            "sog":        v.get("sog"),
-            "cog":        v.get("cog"),
-            "hdg":        v.get("hdg"),
-            "nav":        v.get("nav"),
-            "dest":       v.get("dest", ""),
-            "color":      _vtype_color(v.get("vtype")),
-            "type_label": _vtype_label(v.get("vtype")),
-        }
-        for v in _vessels.values()
-        if v.get("ts", 0) > cutoff and v.get("lat") is not None
-    ]
-    return {"vessels": live, "connected": _ais_connected, "count": len(live)}
 
 
 # ---------------------------------------------------------------------------
@@ -3362,3 +3267,363 @@ async def minorcay_undo(request: Request):
         _mc_previous = None
     _mc_notify(actor, f"{actor} triggered undo")
     return _JSR({"ok": True, "undone": True})
+
+
+# ---------------------------------------------------------------------------
+# ExploreNYC — local events scraper
+# ---------------------------------------------------------------------------
+
+import hashlib as _hashlib
+import re as _re
+
+try:
+    from bs4 import BeautifulSoup as _BS4
+    _HAS_BS4 = True
+except ImportError:
+    _HAS_BS4 = False
+
+_EXPLORENYC_DISMISSED_FILE = os.path.expanduser("~/.explorenyc_dismissed.json")
+_EXPLORENYC_CACHE: dict = {"events": [], "ts": 0.0}
+_EXPLORENYC_TTL = 7200  # 2 hours
+_EXPLORENYC_LOCK = _threading.Lock()
+_EXPLORE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def _eid(source: str, url: str) -> str:
+    return _hashlib.md5(f"{source}:{url}".encode()).hexdigest()[:12]
+
+
+def _parse_event_date(s: str) -> Optional[str]:
+    """Return YYYY-MM-DD string or None."""
+    if not s:
+        return None
+    m = _re.match(r'(\d{4}-\d{2}-\d{2})', s)
+    if m:
+        return m.group(1)
+    try:
+        import email.utils as _eu
+        parsed = _eu.parsedate(s)
+        if parsed:
+            return datetime(*parsed[:3]).date().isoformat()
+    except Exception:
+        pass
+    return None
+
+
+def _strip_html(s: str, maxlen: int = 280) -> str:
+    s = _re.sub(r'<[^>]+>', ' ', s)
+    s = _re.sub(r'\s+', ' ', s).strip()
+    return s[:maxlen]
+
+
+def _load_dismissed() -> set:
+    try:
+        with open(_EXPLORENYC_DISMISSED_FILE) as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+def _save_dismissed(ids: set) -> None:
+    with open(_EXPLORENYC_DISMISSED_FILE, "w") as f:
+        json.dump(sorted(ids), f)
+
+
+def _scrape_theskint() -> list[dict]:
+    try:
+        feed = feedparser.parse("https://www.theskint.com/feed/")
+        out = []
+        for e in feed.entries[:25]:
+            title = e.get("title", "").strip()
+            url = e.get("link", "")
+            if not title or not url:
+                continue
+            desc = _strip_html(e.get("summary", ""))
+            raw_date = e.get("published", "")
+            # feedparser provides published_parsed as struct_time
+            pp = e.get("published_parsed")
+            if pp:
+                dn = datetime(*pp[:3]).date().isoformat()
+            else:
+                dn = _parse_event_date(raw_date)
+            out.append({
+                "id": _eid("theskint", url),
+                "title": title,
+                "description": desc,
+                "category": "free",
+                "venue": "",
+                "date": raw_date,
+                "date_normalized": dn,
+                "url": url,
+                "source": "The Skint",
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _scrape_songkick() -> list[dict]:
+    if not _HAS_BS4:
+        return []
+    try:
+        r = requests.get(
+            "https://www.songkick.com/metro-areas/9128-us-new-york/calendar",
+            headers=_EXPLORE_HEADERS, timeout=15,
+        )
+        r.raise_for_status()
+        soup = _BS4(r.text, "lxml")
+        out = []
+        for item in soup.select("li.event-listings-element")[:25]:
+            a = item.select_one("strong.summary a")
+            if not a:
+                continue
+            title = a.get_text(strip=True)
+            href = a.get("href", "")
+            url = ("https://www.songkick.com" + href) if href.startswith("/") else href
+            venue_el = item.select_one(".venue-name")
+            venue = venue_el.get_text(strip=True) if venue_el else ""
+            date_el = item.select_one("time")
+            date = date_el.get("datetime", "") if date_el else ""
+            out.append({
+                "id": _eid("songkick", url),
+                "title": title,
+                "description": "",
+                "category": "music",
+                "venue": venue,
+                "date": date,
+                "date_normalized": _parse_event_date(date),
+                "url": url,
+                "source": "Songkick",
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _scrape_rss(url: str, source: str, category: str, max_items: int = 20) -> list[dict]:
+    """Generic RSS scraper — pub date becomes date_normalized."""
+    try:
+        feed = feedparser.parse(url)
+        out = []
+        for e in feed.entries[:max_items]:
+            title = e.get("title", "").strip()
+            link = e.get("link", "")
+            if not title or not link:
+                continue
+            desc = _strip_html(e.get("summary", "") or e.get("content", [{}])[0].get("value", ""))
+            pp = e.get("published_parsed")
+            dn = datetime(*pp[:3]).date().isoformat() if pp else None
+            out.append({
+                "id": _eid(source, link),
+                "title": title,
+                "description": desc,
+                "category": category,
+                "venue": "",
+                "date": e.get("published", ""),
+                "date_normalized": dn,
+                "url": link,
+                "source": source,
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _timeout_cat(raw: str) -> str:
+    raw = raw.lower()
+    if any(k in raw for k in ("film", "movie", "cinema", "screen")):
+        return "film"
+    if any(k in raw for k in ("theater", "theatre", "broadway", "play", "opera", "ballet", "dance")):
+        return "theater"
+    if any(k in raw for k in ("music", "concert", "gig", "band", "jazz", "classical", "hip-hop")):
+        return "music"
+    if any(k in raw for k in ("art", "museum", "gallery", "exhibit")):
+        return "art"
+    if any(k in raw for k in ("weird", "odd", "strange", "unusual", "bizarre", "offbeat")):
+        return "weird"
+    if any(k in raw for k in ("free", "no cost", "complimentary")):
+        return "free"
+    return "event"
+
+
+def _scrape_timeout_section(path: str, default_cat: str, default_date: Optional[str] = None) -> list[dict]:
+    if not _HAS_BS4:
+        return []
+    try:
+        r = requests.get(
+            f"https://www.timeout.com{path}",
+            headers=_EXPLORE_HEADERS, timeout=15,
+        )
+        r.raise_for_status()
+
+        # Try __NEXT_DATA__ first
+        m = _re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', r.text, _re.DOTALL)
+        if m:
+            try:
+                nd = json.loads(m.group(1))
+                pp = nd.get("props", {}).get("pageProps", {})
+                # Try several known key paths
+                items = (pp.get("items") or pp.get("articles") or
+                         pp.get("data", {}).get("items") or
+                         pp.get("data", {}).get("articles") or [])
+                if items:
+                    out = []
+                    for it in items[:20]:
+                        title = it.get("name") or it.get("title") or it.get("headline") or ""
+                        if not title:
+                            continue
+                        href = it.get("url") or it.get("link") or ""
+                        url = ("https://www.timeout.com" + href) if href.startswith("/") else href
+                        desc = _strip_html(str(it.get("description") or it.get("teaser") or ""))
+                        combined = title + " " + desc
+                        cat = _timeout_cat(combined) if default_cat == "event" else default_cat
+                        venue_raw = it.get("venue") or {}
+                        venue = venue_raw.get("name", "") if isinstance(venue_raw, dict) else str(venue_raw)
+                        date = it.get("startDate") or it.get("date") or ""
+                        dn = _parse_event_date(date) or default_date
+                        out.append({
+                            "id": _eid("timeout", url or title),
+                            "title": title,
+                            "description": desc,
+                            "category": cat,
+                            "venue": venue,
+                            "date": date,
+                            "date_normalized": dn,
+                            "url": url,
+                            "source": "Time Out NYC",
+                        })
+                    if out:
+                        return out
+            except Exception:
+                pass
+
+        # BeautifulSoup fallback
+        soup = _BS4(r.text, "lxml")
+        out = []
+        seen = set()
+        for card in soup.select("article, [class*='card-wrapper'], [class*='ListingCard']")[:30]:
+            title_el = card.select_one("h2, h3, [class*='title']")
+            if not title_el:
+                continue
+            title = title_el.get_text(strip=True)
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            link_el = card.select_one("a[href]")
+            href = link_el.get("href", "") if link_el else ""
+            url = ("https://www.timeout.com" + href) if href.startswith("/") else href
+            desc_el = card.select_one("p, [class*='description'], [class*='teaser']")
+            desc = _strip_html(desc_el.get_text()) if desc_el else ""
+            combined = title + " " + desc
+            cat = _timeout_cat(combined) if default_cat == "event" else default_cat
+            if url:
+                out.append({
+                    "id": _eid("timeout", url),
+                    "title": title,
+                    "description": desc,
+                    "category": cat,
+                    "venue": "",
+                    "date": "",
+                    "date_normalized": default_date,
+                    "url": url,
+                    "source": "Time Out NYC",
+                })
+        return out
+    except Exception:
+        return []
+
+
+def _fetch_all_explore_events() -> list[dict]:
+    seen_ids: set = set()
+    all_events: list[dict] = []
+    today = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+    # (path, category, default_date)  None date → "Ongoing"
+    timeout_pages = [
+        ("/newyork/things-to-do/best-things-to-do-in-nyc-today", "event",    today),
+        ("/newyork/film",                                          "film",     None),
+        ("/newyork/theater",                                       "theater",  None),
+        ("/newyork/music",                                         "music",    None),
+        ("/newyork/art",                                           "art",      None),
+        ("/newyork/things-to-do/weird-things-to-do-in-nyc",       "weird",    None),
+    ]
+
+    rss_sources = [
+        ("https://www.brooklynvegan.com/feed/",                          "Brooklyn Vegan",  "music"),
+        ("https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml",        "NYT Arts",        "art"),
+        ("https://rss.nytimes.com/services/xml/rss/nyt/Theater.xml",     "NYT Theater",     "theater"),
+        ("https://rss.nytimes.com/services/xml/rss/nyt/Movies.xml",      "NYT Movies",      "film"),
+    ]
+
+    futs = {}
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futs[ex.submit(_scrape_theskint)] = "theskint"
+        futs[ex.submit(_scrape_songkick)] = "songkick"
+        for rss_url, src_name, cat in rss_sources:
+            futs[ex.submit(_scrape_rss, rss_url, src_name, cat)] = src_name
+        for path, cat, ddate in timeout_pages:
+            futs[ex.submit(_scrape_timeout_section, path, cat, ddate)] = f"timeout:{path}"
+        for fut in as_completed(futs):
+            try:
+                for ev in fut.result():
+                    if ev["id"] not in seen_ids:
+                        seen_ids.add(ev["id"])
+                        all_events.append(ev)
+            except Exception:
+                pass
+
+    return all_events
+
+
+def _get_explore_events(force: bool = False) -> list[dict]:
+    with _EXPLORENYC_LOCK:
+        now = time.time()
+        stale = (now - _EXPLORENYC_CACHE["ts"]) > _EXPLORENYC_TTL
+        if force or stale or not _EXPLORENYC_CACHE["events"]:
+            _EXPLORENYC_CACHE["events"] = _fetch_all_explore_events()
+            _EXPLORENYC_CACHE["ts"] = now
+        return _EXPLORENYC_CACHE["events"]
+
+
+@app.get("/explorenyc", response_class=HTMLResponse)
+async def explorenyc_page(request: Request):
+    return templates.TemplateResponse("explorenyc.html", {
+        "request": request, "active": "explorenyc",
+    })
+
+
+@app.get("/explorenyc/data")
+async def explorenyc_data(force: bool = False):
+    from fastapi.responses import JSONResponse as _JSR
+    events = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: _get_explore_events(force)
+    )
+    dismissed = _load_dismissed()
+    visible = [e for e in events if e["id"] not in dismissed]
+    ts = _EXPLORENYC_CACHE["ts"]
+    return _JSR({
+        "events": visible,
+        "dismissed_count": len(dismissed),
+        "total": len(events),
+        "cached_at": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M") if ts else None,
+    })
+
+
+@app.post("/explorenyc/dismiss")
+async def explorenyc_dismiss(event_id: str = Form(...)):
+    from fastapi.responses import JSONResponse as _JSR
+    dismissed = _load_dismissed()
+    dismissed.add(event_id)
+    _save_dismissed(dismissed)
+    return _JSR({"ok": True})
+
+
+@app.post("/explorenyc/clear-dismissed")
+async def explorenyc_clear_dismissed():
+    from fastapi.responses import JSONResponse as _JSR
+    _save_dismissed(set())
+    return _JSR({"ok": True})

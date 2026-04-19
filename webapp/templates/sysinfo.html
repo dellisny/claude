@@ -77,6 +77,9 @@
   /* Process table */
   .proc-table { width: 100%; border-collapse: collapse; font-size: 11px; }
   .proc-table th { color: var(--dim); text-align: left; padding: 2px 4px; font-weight: 400; font-size: 10px; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+  .proc-table th.sortable { cursor: pointer; user-select: none; }
+  .proc-table th.sortable:hover { color: var(--text); }
+  .proc-table th.sort-active { color: var(--yellow); }
   .proc-table td { padding: 2px 4px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .proc-table tr:hover td { background: var(--bg3); }
   .proc-table .td-name { max-width: 140px; }
@@ -206,10 +209,12 @@
 
   <!-- Processes -->
   <div class="si-card" style="grid-column: span 2">
-    <div class="si-card-title">Top Processes (by CPU)</div>
+    <div class="si-card-title" id="proc-title">Top Processes</div>
     <table class="proc-table">
       <thead><tr>
-        <th>PID</th><th>Name</th><th>CPU %</th><th>Mem MB</th>
+        <th>PID</th><th>Name</th>
+        <th class="sortable sort-active" id="th-cpu" onclick="setSort('cpu')">CPU %</th>
+        <th class="sortable" id="th-mem" onclick="setSort('mem')">Mem MB</th>
       </tr></thead>
       <tbody id="proc-tbody"></tbody>
     </table>
@@ -241,6 +246,14 @@
 {% block extra_scripts %}
 <script>
 const colorClass = pct => pct >= 85 ? 'danger' : pct >= 60 ? 'warn' : 'ok';
+
+let procSort = 'cpu';
+
+function setSort(col) {
+  procSort = col;
+  document.getElementById('th-cpu').className = 'sortable' + (col === 'cpu' ? ' sort-active' : '');
+  document.getElementById('th-mem').className = 'sortable' + (col === 'mem' ? ' sort-active' : '');
+}
 
 function setBar(id, pct) {
   const el = document.getElementById(id);
@@ -366,8 +379,10 @@ function render(d) {
   }
 
   // Processes
+  const procs = [...d.processes].sort((a, b) => procSort === 'mem' ? b.mem_mb - a.mem_mb : b.cpu - a.cpu);
+  document.getElementById('proc-title').textContent = 'Top Processes (by ' + (procSort === 'mem' ? 'Memory' : 'CPU') + ')';
   const tbody = document.getElementById('proc-tbody');
-  tbody.innerHTML = d.processes.map(p =>
+  tbody.innerHTML = procs.map(p =>
     `<tr>
       <td style="color:var(--dim)">${p.pid}</td>
       <td class="td-name" title="${p.name}">${p.name}</td>

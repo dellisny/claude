@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}ExploreNYC{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .ex-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 11px;
+    color: var(--dim);
+    padding: 0.4rem 0 0.8rem;
+  }
+  .ex-btn {
+    background: transparent;
+    border: 1px solid var(--dim);
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 10px;
+    padding: 2px 10px;
+    cursor: pointer;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+  .ex-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+  .ex-btn.primary { border-color: var(--yellow); color: var(--yellow); }
+
+  /* Filter tabs */
+  .ex-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .ex-filter {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+  }
+  .ex-filter:hover { border-color: var(--text); color: var(--text); }
+  .ex-filter.active { border-color: var(--yellow); color: var(--yellow); background: rgba(217,119,6,0.07); }
+
+  /* Cards grid */
+  .ex-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 0.75rem;
+  }
+
+  /* Card */
+  .ex-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 0.8rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    position: relative;
+    transition: opacity 0.25s, transform 0.25s;
+  }
+  .ex-card.dismissing {
+    opacity: 0;
+    transform: scale(0.96);
+    pointer-events: none;
+  }
+
+  .ex-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .ex-badges { display: flex; gap: 0.35rem; align-items: center; }
+
+  .ex-source {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border: 1px solid;
+  }
+  .src-theskint  { color: var(--green);   border-color: var(--green); }
+  .src-songkick  { color: var(--magenta); border-color: var(--magenta); }
+  .src-timeout   { color: var(--yellow);  border-color: var(--yellow); }
+  .src-bv        { color: var(--cyan);    border-color: var(--cyan); }
+  .src-nyt       { color: var(--dim);     border-color: var(--dim); }
+
+  .ex-cat {
+    font-size: 9px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    font-weight: 700;
+  }
+  .cat-music    { color: var(--cyan); }
+  .cat-film     { color: var(--magenta); }
+  .cat-theater  { color: var(--yellow); }
+  .cat-art      { color: var(--green); }
+  .cat-free     { color: var(--green); }
+  .cat-weird    { color: var(--red); }
+  .cat-event    { color: var(--dim); }
+
+  .ex-dismiss {
+    background: transparent;
+    border: none;
+    color: var(--border);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
+  .ex-dismiss:hover { color: var(--red); }
+
+  .ex-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .ex-title a { color: inherit; text-decoration: none; }
+  .ex-title a:hover { color: var(--yellow); }
+
+  .ex-meta {
+    font-size: 10px;
+    color: var(--dim);
+  }
+
+  .ex-desc {
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .ex-empty {
+    grid-column: 1 / -1;
+    color: var(--dim);
+    font-size: 12px;
+    padding: 1rem 0;
+  }
+
+  .ex-loading {
+    color: var(--dim);
+    font-size: 12px;
+    padding: 2rem 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border: 2px solid var(--border);
+    border-top-color: var(--yellow);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rule">EXPLORENYC</div>
+
+<div class="ex-status">
+  <span id="ex-ts">Loading…</span>
+  <span id="ex-count"></span>
+  <span style="color:var(--border)">·</span>
+  <span style="font-size:10px">date tabs filter by publish date</span>
+  <button class="ex-btn primary" onclick="doRefresh()">&#8635; Refresh</button>
+  <button class="ex-btn" id="btn-clear-dismissed" onclick="doClearDismissed()" style="display:none">
+    Clear dismissed (<span id="dismissed-count">0</span>)
+  </button>
+</div>
+
+<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+  <span style="font-size:10px;color:var(--dim);letter-spacing:0.07em;text-transform:uppercase;min-width:40px">What</span>
+  <div class="ex-filters" style="margin-bottom:0">
+    <button class="ex-filter active" data-cat="all"     onclick="setCat('all')">All</button>
+    <button class="ex-filter" data-cat="music"          onclick="setCat('music')">Music</button>
+    <button class="ex-filter" data-cat="theater"        onclick="setCat('theater')">Theater</button>
+    <button class="ex-filter" data-cat="film"           onclick="setCat('film')">Film</button>
+    <button class="ex-filter" data-cat="art"            onclick="setCat('art')">Art</button>
+    <button class="ex-filter" data-cat="free"           onclick="setCat('free')">Free</button>
+    <button class="ex-filter" data-cat="weird"          onclick="setCat('weird')">Weird</button>
+    <button class="ex-filter" data-cat="event"          onclick="setCat('event')">Other</button>
+  </div>
+</div>
+<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
+  <span style="font-size:10px;color:var(--dim);letter-spacing:0.07em;text-transform:uppercase;min-width:40px">When</span>
+  <div class="ex-filters" id="ex-date-filters" style="margin-bottom:0">
+    <button class="ex-filter ex-date active" data-when="all"      onclick="setWhen('all')">All Dates</button>
+    <button class="ex-filter ex-date" data-when="today"           onclick="setWhen('today')">Today</button>
+    <button class="ex-filter ex-date" data-when="tomorrow"        onclick="setWhen('tomorrow')">Tomorrow</button>
+    <button class="ex-filter ex-date" data-when="thisweek"        onclick="setWhen('thisweek')">This Week</button>
+    <button class="ex-filter ex-date" data-when="ongoing"         onclick="setWhen('ongoing')">Ongoing</button>
+  </div>
+</div>
+
+<div class="ex-grid" id="ex-grid">
+  <div class="ex-loading"><span class="spinner"></span>Fetching events…</div>
+</div>
+{% endblock %}
+
+{% block footer %}&#9646; ExploreNYC{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let allEvents = [];
+let currentCat = 'all';
+let currentWhen = 'all';
+
+const SOURCE_CLASS = {
+  'The Skint':      'src-theskint',
+  'Songkick':       'src-songkick',
+  'Time Out NYC':   'src-timeout',
+  'Brooklyn Vegan': 'src-bv',
+  'NYT Arts':       'src-nyt',
+  'NYT Theater':    'src-nyt',
+  'NYT Movies':     'src-nyt',
+};
+
+const CAT_LABEL = {
+  music: 'Music', film: 'Film', theater: 'Theater',
+  art: 'Art', free: 'Free', weird: 'Weird', event: 'Other',
+};
+
+function fmtDate(s) {
+  if (!s) return '';
+  try {
+    const d = new Date(s);
+    if (isNaN(d)) return s.slice(0, 16).replace('T', ' ');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  } catch { return s; }
+}
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function tomorrowStr() { return new Date(Date.now() + 86400000).toISOString().slice(0, 10); }
+function weekEndStr() { return new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10); }
+
+function matchesWhen(e) {
+  const d = e.date_normalized;
+  if (currentWhen === 'all')      return true;
+  if (currentWhen === 'ongoing')  return !d;
+  if (!d) return false;
+  const today = todayStr();
+  if (currentWhen === 'today')    return d === today;
+  if (currentWhen === 'tomorrow') return d === tomorrowStr();
+  if (currentWhen === 'thisweek') return d >= today && d <= weekEndStr();
+  return true;
+}
+
+function renderCards() {
+  const grid = document.getElementById('ex-grid');
+  const visible = allEvents.filter(e =>
+    (currentCat === 'all' || e.category === currentCat) && matchesWhen(e)
+  );
+
+  if (visible.length === 0) {
+    grid.innerHTML = `<div class="ex-empty">No events match the current filters.</div>`;
+    return;
+  }
+
+  grid.innerHTML = visible.map(e => {
+    const srcCls = SOURCE_CLASS[e.source] || 'src-timeout';
+    const catCls = 'cat-' + e.category;
+    const catLabel = CAT_LABEL[e.category] || e.category;
+    const metaParts = [fmtDate(e.date), e.venue].filter(Boolean);
+    const link = e.url
+      ? `<a href="${e.url}" target="_blank" rel="noopener">${esc(e.title)}</a>`
+      : esc(e.title);
+    return `<div class="ex-card" id="card-${e.id}">
+      <div class="ex-card-top">
+        <div class="ex-badges">
+          <span class="ex-source ${srcCls}">${esc(e.source)}</span>
+          <span class="ex-cat ${catCls}">${catLabel}</span>
+        </div>
+        <button class="ex-dismiss" title="Dismiss" onclick="dismiss('${e.id}')">✕</button>
+      </div>
+      <div class="ex-title">${link}</div>
+      ${metaParts.length ? `<div class="ex-meta">${esc(metaParts.join(' · '))}</div>` : ''}
+      ${e.description ? `<div class="ex-desc">${esc(e.description)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function setCat(cat) {
+  currentCat = cat;
+  document.querySelectorAll('.ex-filter[data-cat]').forEach(b => {
+    b.classList.toggle('active', b.dataset.cat === cat);
+  });
+  renderCards();
+}
+
+function setWhen(when) {
+  currentWhen = when;
+  document.querySelectorAll('.ex-filter[data-when]').forEach(b => {
+    b.classList.toggle('active', b.dataset.when === when);
+  });
+  renderCards();
+}
+
+async function dismiss(id) {
+  const card = document.getElementById('card-' + id);
+  if (card) card.classList.add('dismissing');
+  try {
+    const fd = new FormData();
+    fd.append('event_id', id);
+    await fetch('/explorenyc/dismiss', { method: 'POST', body: fd });
+  } catch {}
+  allEvents = allEvents.filter(e => e.id !== id);
+  setTimeout(() => renderCards(), 260);
+  // update dismissed count badge
+  const dc = document.getElementById('dismissed-count');
+  const cur = parseInt(dc.textContent) || 0;
+  dc.textContent = cur + 1;
+  document.getElementById('btn-clear-dismissed').style.display = '';
+}
+
+async function doClearDismissed() {
+  await fetch('/explorenyc/clear-dismissed', { method: 'POST' });
+  document.getElementById('btn-clear-dismissed').style.display = 'none';
+  document.getElementById('dismissed-count').textContent = '0';
+}
+
+async function load(force) {
+  const grid = document.getElementById('ex-grid');
+  if (force) grid.innerHTML = '<div class="ex-loading"><span class="spinner"></span>Refreshing…</div>';
+  try {
+    const url = '/explorenyc/data' + (force ? '?force=true' : '');
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    allEvents = d.events;
+    document.getElementById('ex-ts').textContent =
+      d.cached_at ? `cached at ${d.cached_at} UTC` : 'just fetched';
+    document.getElementById('ex-count').textContent =
+      `${d.events.length} events`;
+    const dc = document.getElementById('dismissed-count');
+    dc.textContent = d.dismissed_count;
+    document.getElementById('btn-clear-dismissed').style.display =
+      d.dismissed_count > 0 ? '' : 'none';
+    renderCards();
+  } catch (err) {
+    grid.innerHTML = `<div class="ex-empty">Failed to load events. <button class="ex-btn" onclick="load(true)">Retry</button></div>`;
+  }
+}
+
+function doRefresh() { load(true); }
+
+load(false);
+</script>
+{% endblock %}
