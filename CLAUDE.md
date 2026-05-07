@@ -8,13 +8,17 @@ Personal FastAPI dashboard at `webapp/app.py`, served by gunicorn on `127.0.0.1:
 
 ## Session Logging
 
-After every conversation, write a session log to `Memory/` and commit it via Gittyup. This applies to all work in this repo, not just specific projects.
+Write a session log to `Memory/` and commit it via Gittyup when:
+- A meaningful piece of work is complete (app built, feature added, significant decision made), or
+- The user says "log this" or "we're done"
 
-**Format:** Create or append to a relevant file in `Memory/` (e.g. `Memory/actoroverlap.md`, `Memory/hpl-p1.md`). Each session entry should include:
+There is no automatic end-of-conversation trigger, so log at natural completion points rather than waiting for a signal that won't come.
+
+**Format:** Create or append to a relevant file in `Memory/` (e.g. `Memory/actoroverlap.md`, `Memory/hpl-p1.md`). Each entry should include:
 - Date
 - What was built or discussed
 - Decisions made and why
 - Open questions or next steps
 - Anything non-obvious that future-me should know
 
-If a topic doesn't have a file yet, create one. If it does, append a new dated section. After writing, commit via Gittyup with a message like "Memory: log YYYY-MM-DD session".
+If a topic doesn't have a file yet, create one. If it does, append a new dated section. Commit via Gittyup with a message like "Memory: log YYYY-MM-DD session".
