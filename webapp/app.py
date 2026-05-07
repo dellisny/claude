@@ -4083,3 +4083,129 @@ async def hpl_scan_results(scan_id: str):
         sd['congress_trades'] = json.loads(sd['congress_trades'])
         result['signals'].append(sd)
     return JSONResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# Actor Overlap
+# ---------------------------------------------------------------------------
+
+_TMDB_TOKEN = os.environ.get("TMDB_API_KEY", "")
+_TMDB_BASE  = "https://api.themoviedb.org/3"
+
+
+def _tmdb_headers() -> dict:
+    return {"Authorization": f"Bearer {_TMDB_TOKEN}", "accept": "application/json"}
+
+
+def _tmdb_search(query: str) -> list[dict]:
+    r = requests.get(
+        f"{_TMDB_BASE}/search/multi",
+        headers=_tmdb_headers(),
+        params={"query": query, "include_adult": "false", "page": "1"},
+        timeout=8,
+    )
+    r.raise_for_status()
+    out = []
+    for item in r.json().get("results", []):
+        mt = item.get("media_type")
+        if mt not in ("movie", "tv"):
+            continue
+        title = item.get("title") or item.get("name") or ""
+        date  = item.get("release_date") or item.get("first_air_date") or ""
+        out.append({
+            "id":     item["id"],
+            "type":   mt,
+            "title":  title,
+            "year":   date[:4] if date else "",
+            "poster": item.get("poster_path"),
+        })
+        if len(out) >= 6:
+            break
+    return out
+
+
+def _tmdb_credits(media_type: str, tmdb_id: int) -> list[dict]:
+    if media_type == "movie":
+        r = requests.get(
+            f"{_TMDB_BASE}/movie/{tmdb_id}/credits",
+            headers=_tmdb_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return [
+            {
+                "id":        p["id"],
+                "name":      p["name"],
+                "character": p.get("character", ""),
+                "profile":   p.get("profile_path"),
+            }
+            for p in r.json().get("cast", [])
+        ]
+    else:
+        r = requests.get(
+            f"{_TMDB_BASE}/tv/{tmdb_id}/aggregate_credits",
+            headers=_tmdb_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        out = []
+        for p in r.json().get("cast", []):
+            roles     = p.get("roles", [])
+            character = roles[0]["character"] if roles else ""
+            out.append({
+                "id":        p["id"],
+                "name":      p["name"],
+                "character": character,
+                "profile":   p.get("profile_path"),
+            })
+        return out
+
+
+@app.get("/actoroverlap", response_class=HTMLResponse)
+async def actoroverlap_page(request: Request):
+    return templates.TemplateResponse("actoroverlap.html", {
+        "request": request,
+        "active":  "actoroverlap",
+    })
+
+
+@app.get("/actoroverlap/search")
+async def actoroverlap_search(q: str = ""):
+    if not q.strip():
+        return JSONResponse([])
+    try:
+        return JSONResponse(_tmdb_search(q.strip()))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/actoroverlap/compare")
+async def actoroverlap_compare(
+    a_type: str, a_id: int, a_title: str = "",
+    b_type: str = "", b_id: int = 0, b_title: str = "",
+):
+    try:
+        cast_a = _tmdb_credits(a_type, a_id)
+        cast_b = _tmdb_credits(b_type, b_id)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    lookup_b = {p["id"]: p for p in cast_b}
+    overlap = [
+        {
+            "id":      p["id"],
+            "name":    p["name"],
+            "profile": p["profile"],
+            "char_a":  p["character"],
+            "char_b":  lookup_b[p["id"]]["character"],
+        }
+        for p in cast_a
+        if p["id"] in lookup_b
+    ]
+
+    return JSONResponse({
+        "count":   len(overlap),
+        "actors":  overlap,
+        "title_a": a_title,
+        "title_b": b_title,
+    })
