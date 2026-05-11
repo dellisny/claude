@@ -2,6 +2,7 @@
 """webapp — Web interface for headlines and bets programs."""
 
 import asyncio
+from difflib import SequenceMatcher
 import json
 
 from dotenv import load_dotenv
@@ -104,13 +105,27 @@ ET = ZoneInfo("America/New_York")
 # ---------------------------------------------------------------------------
 
 _SESSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sessions.json")
-_SESSIONS_LOCK = _threading.Lock()
+_SESS_LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sessions.lock")
 _SESSION_TTL   = 30 * 24 * 3600          # 30 days in seconds
 _SITE_PASS     = os.environ.get("SITE_PASS", "")
 _ENV_FILE      = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
 _AUTH_SKIP        = {"/login", "/favicon.svg", "/favicon.ico"}
 _AUTH_SKIP_PREFIX = "/static"
+
+
+import fcntl as _fcntl
+import contextlib as _contextlib
+
+@_contextlib.contextmanager
+def _sess_lock():
+    os.makedirs(os.path.dirname(_SESS_LOCK_FILE), exist_ok=True)
+    with open(_SESS_LOCK_FILE, "w") as lf:
+        _fcntl.flock(lf, _fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            _fcntl.flock(lf, _fcntl.LOCK_UN)
 
 
 def _sess_load() -> dict:
@@ -139,7 +154,7 @@ async def _site_auth(request: Request, call_next):
         return await call_next(request)
     token = request.cookies.get("site_tok")
     if token:
-        with _SESSIONS_LOCK:
+        with _sess_lock():
             sessions = _sess_prune(_sess_load())
             if token in sessions:
                 now = time.time()
@@ -148,7 +163,7 @@ async def _site_auth(request: Request, call_next):
                 _sess_save(sessions)
         if token in sessions:
             response = await call_next(request)
-            response.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax")
+            response.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax", secure=True)
             return response
     next_url = request.url.path
     if request.url.query:
@@ -183,12 +198,12 @@ async def login_post(request: Request, name: str = Form(...), passphrase: str = 
         "last_used_at": now,
         "expires_at":   now + _SESSION_TTL,
     }
-    with _SESSIONS_LOCK:
+    with _sess_lock():
         sessions = _sess_prune(_sess_load())
         sessions[token] = entry
         _sess_save(sessions)
     resp = RedirectResponse(url=next if next.startswith("/") else "/", status_code=303)
-    resp.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax")
+    resp.set_cookie("site_tok", token, max_age=_SESSION_TTL, httponly=True, samesite="lax", secure=True)
     return resp
 
 
@@ -208,7 +223,7 @@ def _rel_time(seconds: float) -> str:
 
 @app.get("/sessions", response_class=HTMLResponse)
 async def sessions_page(request: Request):
-    with _SESSIONS_LOCK:
+    with _sess_lock():
         sessions = _sess_prune(_sess_load())
         _sess_save(sessions)
     now  = time.time()
@@ -232,7 +247,7 @@ async def sessions_page(request: Request):
 
 @app.post("/sessions/revoke/{token}", response_class=RedirectResponse)
 async def sessions_revoke(token: str):
-    with _SESSIONS_LOCK:
+    with _sess_lock():
         sessions = _sess_load()
         sessions.pop(token, None)
         _sess_save(sessions)
@@ -241,7 +256,7 @@ async def sessions_revoke(token: str):
 
 @app.post("/sessions/revoke-all", response_class=RedirectResponse)
 async def sessions_revoke_all():
-    with _SESSIONS_LOCK:
+    with _sess_lock():
         _sess_save({})
     return RedirectResponse(url="/sessions", status_code=303)
 
@@ -3054,7 +3069,7 @@ _MC_OWNER      = "doug"
 def _mc_get_actor(request: Request) -> str:
     token = request.cookies.get("site_tok", "")
     if token:
-        with _SESSIONS_LOCK:
+        with _sess_lock():
             sessions = _sess_load()
         return sessions.get(token, {}).get("name", "unknown")
     return "unknown"
@@ -4098,30 +4113,47 @@ def _tmdb_headers() -> dict:
 
 
 def _tmdb_search(query: str) -> list[dict]:
-    r = requests.get(
-        f"{_TMDB_BASE}/search/multi",
-        headers=_tmdb_headers(),
-        params={"query": query, "include_adult": "false", "page": "1"},
-        timeout=8,
-    )
-    r.raise_for_status()
-    out = []
-    for item in r.json().get("results", []):
-        mt = item.get("media_type")
-        if mt not in ("movie", "tv"):
-            continue
-        title = item.get("title") or item.get("name") or ""
-        date  = item.get("release_date") or item.get("first_air_date") or ""
-        out.append({
-            "id":     item["id"],
-            "type":   mt,
-            "title":  title,
-            "year":   date[:4] if date else "",
-            "poster": item.get("poster_path"),
-        })
-        if len(out) >= 6:
-            break
-    return out
+    pool: dict[int, dict] = {}
+
+    def _fetch(q: str) -> None:
+        r = requests.get(
+            f"{_TMDB_BASE}/search/multi",
+            headers=_tmdb_headers(),
+            params={"query": q, "include_adult": "false", "page": "1"},
+            timeout=8,
+        )
+        r.raise_for_status()
+        for item in r.json().get("results", []):
+            mt = item.get("media_type")
+            if mt not in ("movie", "tv") or item["id"] in pool:
+                continue
+            title = item.get("title") or item.get("name") or ""
+            date  = item.get("release_date") or item.get("first_air_date") or ""
+            pool[item["id"]] = {
+                "id":     item["id"],
+                "type":   mt,
+                "title":  title,
+                "year":   date[:4] if date else "",
+                "poster": item.get("poster_path"),
+                "pop":    item.get("popularity", 0),
+            }
+
+    _fetch(query)
+
+    # Per-word fallback so single-word typos don't kill multi-word queries
+    words = [w for w in query.split() if len(w) >= 3]
+    if len(words) >= 2:
+        for word in words:
+            try:
+                _fetch(word)
+            except Exception:
+                pass
+
+    def _score(item: dict) -> tuple:
+        sim = SequenceMatcher(None, query.lower(), item["title"].lower()).ratio()
+        return (sim, item["pop"])
+
+    return sorted(pool.values(), key=_score, reverse=True)[:6]
 
 
 def _tmdb_credits(media_type: str, tmdb_id: int) -> list[dict]:
@@ -4209,3 +4241,52 @@ async def actoroverlap_compare(
         "title_a": a_title,
         "title_b": b_title,
     })
+
+
+@app.get("/actoroverlap/person/{person_id}")
+async def actoroverlap_person(person_id: int):
+    try:
+        r1 = requests.get(
+            f"{_TMDB_BASE}/person/{person_id}",
+            headers=_tmdb_headers(), timeout=8,
+        )
+        r1.raise_for_status()
+        p = r1.json()
+
+        r2 = requests.get(
+            f"{_TMDB_BASE}/person/{person_id}/combined_credits",
+            headers=_tmdb_headers(), timeout=8,
+        )
+        r2.raise_for_status()
+        cast = r2.json().get("cast", [])
+        cast.sort(key=lambda x: x.get("popularity", 0), reverse=True)
+        known_for = []
+        seen = set()
+        for c in cast:
+            title = c.get("title") or c.get("name") or ""
+            if title in seen:
+                continue
+            seen.add(title)
+            year = (c.get("release_date") or c.get("first_air_date") or "")[:4]
+            known_for.append({
+                "title":     title,
+                "year":      year,
+                "type":      c.get("media_type"),
+                "character": c.get("character", ""),
+                "poster":    c.get("poster_path"),
+            })
+            if len(known_for) >= 10:
+                break
+
+        return JSONResponse({
+            "id":             p["id"],
+            "name":           p.get("name", ""),
+            "biography":      p.get("biography", ""),
+            "birthday":       p.get("birthday"),
+            "place_of_birth": p.get("place_of_birth"),
+            "department":     p.get("known_for_department"),
+            "profile":        p.get("profile_path"),
+            "known_for":      known_for,
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)

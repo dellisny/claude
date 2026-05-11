@@ -117,14 +117,27 @@
     display: inline-block;
     margin-top: 8px;
     font-size: 11px;
-    color: var(--yellow);
+    color: var(--dim);
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    font-family: inherit;
+    cursor: pointer;
+    padding: 3px 8px;
+    letter-spacing: 0.04em;
+  }
+  .ao-change-btn:hover { color: var(--text); border-color: var(--yellow); }
+
+  .ao-new-search {
     background: none;
     border: none;
     font-family: inherit;
+    font-size: 12px;
+    color: var(--dim);
     cursor: pointer;
-    padding: 0;
+    padding: 0 0 0.9rem 0;
     letter-spacing: 0.04em;
   }
+  .ao-new-search:hover { color: var(--yellow); }
 
   /* ── Compare button ────────────────────────────────────── */
   .ao-go {
@@ -174,7 +187,9 @@
     background: var(--bg2);
     border: 1px solid var(--border);
     align-items: flex-start;
+    cursor: pointer;
   }
+  .ao-actor:hover { border-color: var(--yellow); }
   .ao-actor-photo {
     width: 48px;
     height: 72px;
@@ -205,6 +220,89 @@
   .ao-none  { color: var(--dim); font-size: 13px; padding: 1.5rem 0; text-align: center; }
   .ao-error { color: var(--red); font-size: 12px; padding: 0.75rem; background: var(--bg2); border: 1px solid var(--red); margin-top: 0.5rem; }
   .ao-spin  { color: var(--dim); font-size: 12px; padding: 1rem 0; letter-spacing: 0.06em; }
+
+  /* ── Person modal ──────────────────────────────────────── */
+  #person-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+  #person-panel {
+    position: relative;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    max-width: 540px;
+    width: 100%;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 1.2rem 1.2rem 1.5rem;
+  }
+  .ao-close-btn {
+    position: absolute;
+    top: 0.6rem; right: 0.7rem;
+    background: none;
+    border: none;
+    color: var(--dim);
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px 6px;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .ao-close-btn:hover { color: var(--text); }
+  .ao-person-header {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    padding-right: 1.5rem;
+  }
+  .ao-person-photo {
+    width: 80px;
+    height: 120px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+  .ao-person-photo-ph {
+    width: 80px;
+    height: 120px;
+    background: var(--bg3);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    color: var(--dim);
+  }
+  .ao-person-name { font-size: 17px; font-weight: 700; margin-bottom: 0.35rem; }
+  .ao-person-meta { font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .ao-person-bio {
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.7;
+    margin-bottom: 1rem;
+    max-height: 160px;
+    overflow-y: auto;
+    border-left: 2px solid var(--border);
+    padding-left: 0.75rem;
+  }
+  .ao-kf-list { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.25rem; }
+  .ao-kf-item { display: flex; gap: 0.6rem; align-items: center; }
+  .ao-kf-thumb {
+    width: 30px;
+    height: 45px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg3);
+  }
+  .ao-kf-thumb-ph { width: 30px; height: 45px; background: var(--bg3); flex-shrink: 0; }
+  .ao-kf-title { font-size: 12px; font-weight: 700; }
+  .ao-kf-meta  { font-size: 11px; color: var(--dim); }
 </style>
 {% endblock %}
 
@@ -243,6 +341,13 @@
   <button id="go-btn" class="ao-go" disabled onclick="doCompare()">Find Overlap</button>
 
   <div id="results" class="ao-results" style="display:none"></div>
+</div>
+
+<div id="person-modal" style="display:none" onclick="if(event.target===this)closePerson()">
+  <div id="person-panel">
+    <button class="ao-close-btn" onclick="closePerson()">&#10005;</button>
+    <div id="person-content"><div class="ao-spin">Loading…</div></div>
+  </div>
 </div>
 {% endblock %}
 
@@ -328,7 +433,7 @@ function pick(side, idx) {
       <div>
         <div class="ao-card-title">${esc(item.title)}</div>
         <div class="ao-card-meta">${esc(item.year) || "—"} · ${type}</div>
-        <button class="ao-change-btn" onclick="clear('${side}')">&#10005; change</button>
+        <button class="ao-change-btn" onclick="clear('${side}')">&#8592; back</button>
       </div>
     </div>`;
 
@@ -354,6 +459,19 @@ function updateBtn() {
   document.getElementById("go-btn").disabled = !(sel.a && sel.b);
 }
 
+function clearAll() {
+  ["a", "b"].forEach(side => {
+    sel[side] = null;
+    document.getElementById(`card-${side}`).style.display  = "none";
+    document.getElementById(`search-${side}`).style.display = "block";
+    document.getElementById(`inp-${side}`).value = "";
+  });
+  document.getElementById("results").style.display = "none";
+  updateBtn();
+  document.getElementById("inp-a").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 /* ── Compare ─────────────────────────────────────────────── */
 async function doCompare() {
   const btn = document.getElementById("go-btn");
@@ -374,7 +492,7 @@ async function doCompare() {
     if (data.error) throw new Error(data.error);
     render(data);
   } catch (e) {
-    res.innerHTML = `<div class="ao-error">Error: ${esc(e.message)}</div>`;
+    res.innerHTML = `<button class="ao-new-search" onclick="clearAll()">&#8592; new search</button><div class="ao-error">Error: ${esc(e.message)}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = "Find Overlap";
@@ -386,8 +504,10 @@ function render(data) {
   const res = document.getElementById("results");
   const { count, actors, title_a, title_b } = data;
 
+  const newSearch = `<button class="ao-new-search" onclick="clearAll()">&#8592; new search</button>`;
+
   if (!count) {
-    res.innerHTML = `<div class="rule">RESULTS</div>
+    res.innerHTML = `${newSearch}<div class="rule">RESULTS</div>
       <div class="ao-none">No credited actors appear in both titles.</div>`;
     return;
   }
@@ -395,7 +515,7 @@ function render(data) {
   const cards = actors.map(a => {
     const charA = a.char_a ? `<span>${esc(a.char_a)}</span>` : `—`;
     const charB = a.char_b ? `<span>${esc(a.char_b)}</span>` : `—`;
-    return `<div class="ao-actor">
+    return `<div class="ao-actor" onclick="showPerson(${a.id})">
       ${profileImg(a.profile)}
       <div class="ao-actor-info">
         <div class="ao-actor-name">${esc(a.name)}</div>
@@ -406,12 +526,84 @@ function render(data) {
   }).join("");
 
   res.innerHTML = `
+    ${newSearch}
     <div class="rule">RESULTS</div>
     <div class="ao-summary">
       ${count} actor${count === 1 ? "" : "s"} appear in both
       <strong>${esc(title_a)}</strong> and <strong>${esc(title_b)}</strong>
     </div>
     <div class="ao-grid">${cards}</div>`;
+}
+
+/* ── Person modal ────────────────────────────────────────── */
+async function showPerson(id) {
+  const modal   = document.getElementById("person-modal");
+  const content = document.getElementById("person-content");
+  modal.style.display = "flex";
+  content.innerHTML   = `<div class="ao-spin">Loading…</div>`;
+  try {
+    const r    = await fetch(`/actoroverlap/person/${id}`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    renderPerson(data);
+  } catch (e) {
+    content.innerHTML = `<div class="ao-error">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function closePerson() {
+  document.getElementById("person-modal").style.display = "none";
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closePerson();
+});
+
+function renderPerson(p) {
+  const content = document.getElementById("person-content");
+  const photo   = p.profile
+    ? `<img class="ao-person-photo" src="${IMG}/w185${p.profile}" alt="">`
+    : `<div class="ao-person-photo-ph">&#128100;</div>`;
+
+  const meta = [];
+  if (p.birthday)        meta.push(`Born ${p.birthday}`);
+  if (p.place_of_birth)  meta.push(p.place_of_birth);
+  if (p.department)      meta.push(p.department);
+
+  const bio = p.biography
+    ? `<div class="ao-person-bio">${esc(p.biography)}</div>`
+    : "";
+
+  const kfItems = p.known_for.map(c => {
+    const thumb = c.poster
+      ? `<img class="ao-kf-thumb" src="${IMG}/w92${c.poster}" alt="" loading="lazy">`
+      : `<div class="ao-kf-thumb-ph"></div>`;
+    const mtype = c.type === "movie" ? "Movie" : "TV";
+    const role  = c.character ? ` · <em>${esc(c.character)}</em>` : "";
+    return `<div class="ao-kf-item">
+      ${thumb}
+      <div>
+        <div class="ao-kf-title">${esc(c.title)}</div>
+        <div class="ao-kf-meta">${c.year || "—"} · <span class="ao-opt-type">${mtype}</span>${role}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const kfSection = kfItems
+    ? `<div class="rule" style="margin:1rem 0 0.7rem">KNOWN FOR</div>
+       <div class="ao-kf-list">${kfItems}</div>`
+    : "";
+
+  content.innerHTML = `
+    <div class="ao-person-header">
+      ${photo}
+      <div>
+        <div class="ao-person-name">${esc(p.name)}</div>
+        ${meta.length ? `<div class="ao-person-meta">${meta.map(esc).join(" · ")}</div>` : ""}
+      </div>
+    </div>
+    ${bio}
+    ${kfSection}`;
 }
 
 wire("a");

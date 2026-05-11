@@ -22,4 +22,5 @@ webapp/gunicorn.ctl
 
 # Runtime data
 webapp/data/sessions.json
+webapp/data/sessions.lock
 webapp/data/minorcay_tasks.toml
