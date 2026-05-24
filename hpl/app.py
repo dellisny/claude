@@ -419,9 +419,7 @@ async def whale_old_page(request: Request):
             "SELECT id, created_at, status, total_tickers, processed_tickers "
             "FROM hpl_scans ORDER BY created_at DESC LIMIT 20"
         ).fetchall()]
-    return templates.TemplateResponse("whale_old.html", {
-        "request": request, "scans": scans,
-    })
+    return templates.TemplateResponse(request, "whale_old.html", {"scans": scans})
 
 
 @app.post("/whale-old/scan")
